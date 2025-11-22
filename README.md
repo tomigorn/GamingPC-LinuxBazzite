@@ -43,6 +43,7 @@ and add the lines:
       "icon": "terminal-bash",
       "overrideName": true
       }
-   }
+   },
+    "terminal.integrated.fontFamily": "Symbols Nerd Font Mono",
 ```
 
