@@ -2,7 +2,7 @@
 
 Bazzite with KDE Plasma and Wayland with an AMD GPU
 
-# hostname
+# set PC hostname
 ```bash
 # set the hostname to PrimeBazzite
 $ sudo hostnamectl set-hostname PrimeBazzite
@@ -28,7 +28,7 @@ OS Support Remaining: 1y 1w 2d
         Firmware Age: 1y 9month 2w 2d
 ```
 
-# set VS Code terminal
+# set VS Code terminal colours
 - File -> Preferences -> Settings -> top right corener: Open Settings (JSON)
 - or ctrl + , -> top right corener: Open Settings (JSON)
 
@@ -64,3 +64,17 @@ the process rg scans the filesystem and indexes files. this is important for lat
     },
     "search.followSymlinks": false
 ```
+
+# Brave: Teams PWA App shortcut
+In Brave we can make Apps from websites. One such example is Teams. Because the Teams app doesn´t exist on Bazzite anymore, also not with flathub, we can simply install this PWA app. This is as easy as pressing the install top button at the right of the URL input.
+
+However, I would like to treat Teams as a program, and be able to search it in the start menu, or perhaps also have a shortcut on my desktop or in the start menu.
+
+In Brave, open:
+```plaintext
+brave://apps/
+```
+
+right click the Teams PWA and create shortcut in the application menu
+
+# Fix Keyboard Layout
