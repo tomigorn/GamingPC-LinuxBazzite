@@ -47,3 +47,20 @@ and add the lines:
     "terminal.integrated.fontFamily": "Symbols Nerd Font Mono",
 ```
 
+# VS Code: high CPU usage because of process 'rg'
+the process rg scans the filesystem and indexes files. this is important for later searches and such. however, because this is my personal Computer with 2TB SSD and lots of Games and such, the files take quite long to index. we can exclude everything we don´t need:
+
+
+- File -> Preferences -> Settings -> top right corener: Open Settings (JSON)
+- or ctrl + , -> top right corener: Open Settings (JSON)
+
+```json
+    "search.exclude": {
+        "**/*": true,
+        "/home/bazzite/Desktop/**": false,
+        "/home/bazzite/Documents/**": false,
+        "/home/bazzite/Downloads/**": false,
+        "/home/bazzite/Projects/**": false
+    },
+    "search.followSymlinks": false
+```
