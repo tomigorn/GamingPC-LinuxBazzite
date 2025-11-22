@@ -27,3 +27,22 @@ OS Support Remaining: 1y 1w 2d
        Firmware Date: Tue 2024-02-06
         Firmware Age: 1y 9month 2w 2d
 ```
+
+# set VS Code terminal
+- File -> Preferences -> Settings -> top right corener: Open Settings (JSON)
+- or ctrl + , -> top right corener: Open Settings (JSON)
+
+and add the lines:
+
+```json
+   "terminal.integrated.defaultProfile.linux": "bash",
+   "terminal.integrated.profiles.linux": {
+      "bash": {
+      "path": "/usr/bin/flatpak-spawn",
+      "args": ["--host", "--env=TERM=xterm-256color", "bash"],
+      "icon": "terminal-bash",
+      "overrideName": true
+      }
+   }
+```
+
