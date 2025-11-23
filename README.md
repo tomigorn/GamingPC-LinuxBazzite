@@ -77,4 +77,41 @@ brave://apps/
 
 right click the Teams PWA and create shortcut in the application menu
 
+# create a GitHub SSH key
+
+Ed is better and recommended by GitHub:
+
+| Feature               | Ed25519                   | RSA                     |
+| --------------------- | ------------------------- | ----------------------- |
+| Security              | ✅ Stronger, modern crypto | ✅ Secure but older      |
+| Speed                 | ⚡ Faster                  | 🐢 Slower               |
+| Key size              | 🔹 Very small             | 🔸 Very large           |
+| Resistance to attacks | ✅ Better                  | ⚠️ More legacy risk     |
+| GitHub recommendation | ✅ Preferred               | ⚠️ Supported but legacy |
+
+```bash
+$ ssh-keygen -t ed25519 -C "tomigorn@gmail.com -> GitHub" -f ~/.ssh/GitHub
+```
+
+then in the ~/.ssh/config also add GitHub as a host. this is only needed because we want a non-default file name for the ssh-key.
+
+```bash
+Host github.com
+    User tomigorn@gmail.com
+    IdentityFile ~/.ssh/GitHub
+```
+
+Then make sure to also set the username and email for the local git user:
+
+```bash
+$ git config --global user.name "tomigorn"
+$ git config --global user.name
+tomigorn
+
+$ git config --global user.email "tomigorn@gmail.com"
+$ git config --global user.email
+tomigorn@gmail.com
+```
+
 # Fix Keyboard Layout
+The keyboard layout of US intl or US intl with dead keys isn't the same as in windows. on a immutable OS like Bazzite, we sadly can't fix this. closest is to use English (intl., with AltGr dead keys) and get used to the slight differences.
