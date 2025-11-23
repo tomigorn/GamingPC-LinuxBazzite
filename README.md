@@ -65,6 +65,21 @@ the process rg scans the filesystem and indexes files. this is important for lat
     "search.followSymlinks": false
 ```
 
+# VS Code: keyring / keychain issue
+
+on KDE and with the flatpak version of VS code, there is the issue, that it will loose your login information because of not being able to connect to the OS keychain. to solve this do 2 things:
+
+- CTRL + Shift + P : Configure Runtime Arguments
+add the line
+```bash
+	"password-store":"kwallet5"
+```
+- and adjust the flatpak launch arguments with
+```bash
+$ flatpak override --user --talk-name=org.kde.kwalletd5 --talk-name=org.freedesktop.secrets com.visualstudio.code
+```
+then restart the computer.
+
 # Brave: Teams PWA App shortcut
 In Brave we can make Apps from websites. One such example is Teams. Because the Teams app doesn´t exist on Bazzite anymore, also not with flathub, we can simply install this PWA app. This is as easy as pressing the install top button at the right of the URL input.
 
