@@ -131,6 +131,12 @@ tomigorn@gmail.com
 # Fix Keyboard Layout
 The keyboard layout of US intl or US intl with dead keys isn't the same as in windows. on a immutable OS like Bazzite, we sadly can't fix this. closest is to use English (intl., with AltGr dead keys) and get used to the slight differences.
 
+Additionally, the function keys aren't set first, but the media keys are first. we need to use fn + function keys in order to get something like F1. The fix is to set the Kayboard Model to be Apple | Apple Aluminium (ANSI) and then write in the terminal:
+
+```bash
+echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode
+```
+
 # Steelseries Dock: Shutdown issue
 
 The Steelseries Arctis Nova Pro Wireless Headset comes with a Dock. This dock sends the wireless signal and charges the battery. it also has some OLED screen info. Under Windows, it turns off when the system turns off, because there is the Firmware Software "Steelseries GG" Managing the power state of the Dock. on linux, this software doesn't exist.
