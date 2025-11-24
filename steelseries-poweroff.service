@@ -1,0 +1,13 @@
+[Unit]
+Description=Turn off SteelSeries USB on shutdown
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target poweroff.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/steelseries-usb-off.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=halt.target reboot.target poweroff.target
+
