@@ -6,6 +6,7 @@ Before=shutdown.target reboot.target halt.target poweroff.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/steelseries-usb-off.sh
+ExecStart=/usr/local/bin/razer-usb-off.sh
 RemainAfterExit=yes
 
 [Install]

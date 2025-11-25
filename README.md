@@ -137,6 +137,8 @@ Additionally, the function keys aren't set first, but the media keys are first. 
 echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode
 ```
 
+this isn't persistent across reboots, so we make a systend service.
+
 # Steelseries Dock: Shutdown issue
 
 The Steelseries Arctis Nova Pro Wireless Headset comes with a Dock. This dock sends the wireless signal and charges the battery. it also has some OLED screen info. Under Windows, it turns off when the system turns off, because there is the Firmware Software "Steelseries GG" Managing the power state of the Dock. on linux, this software doesn't exist.

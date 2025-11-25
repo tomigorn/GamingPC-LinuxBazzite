@@ -1,0 +1,12 @@
+[Unit]
+Description=Set Apple Fn mode for keyboard
+After=systemd-modules-load.service
+ConditionPathExists=/sys/module/hid_apple/parameters/fnmode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/sh -c 'echo 2 > /sys/module/hid_apple/parameters/fnmode'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
