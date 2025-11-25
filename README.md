@@ -28,6 +28,28 @@ OS Support Remaining: 1y 1w 2d
         Firmware Age: 1y 9month 2w 2d
 ```
 
+# grub boot order: set windows first
+
+edit the file /etc/default/grub to include Windows. Add the line with GRUB_DEFAULT.
+```bash
+$ sudo nano /etc/default/grub
+
+GRUB_DEFAULT="Windows Boot Manager (on /dev/nvme0n1p1)"
+GRUB_TIMEOUT=3
+GRUB_TIMEOUT_STYLE=menu
+GRUB_TERMINAL_OUTPUT="console"
+```
+
+```bash
+# regenerate GRUB config
+sudo grub2-mkconfig -o /boot/grub2/grub.cfg
+
+# if you edited it previously, make sure Fedora/Bazzite is the first selection. Otherwise grub won't be first and grub will then select windows to be the default.
+sudo efibootmgr -o 0001,0000
+```
+
+after a reboot you should see the black grub screen with the entries. the order is the same but the highlited entry is now windows.
+
 # set VS Code terminal colours
 - File -> Preferences -> Settings -> top right corener: Open Settings (JSON)
 - or ctrl + , -> top right corener: Open Settings (JSON)
