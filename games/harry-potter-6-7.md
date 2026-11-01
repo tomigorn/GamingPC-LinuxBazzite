@@ -26,6 +26,7 @@ All of it was done on this Linux install (HBP installed 2026-08-22, tweaked the 
 | Change | By |
 |---|---|
 | official game patch, wrapper (`d3d9.dll` + `d3d9.ini`: 60 fps fix for HBP, FOV fix for DH), `d3d9: n,b` override, HBP registry defaults for resolution and LOD | Lutris installer |
+| Lutris `exe:` repointed to the `…Hallows(TM) - Part 1` folder (DH) | hand |
 | `d3d9.ini`: `UsePrimaryMonitor` 0 → 1 (both) | hand |
 | `d3d9.ini`: resolution 1600×900 → 2560×1440 (HBP) | hand |
 | `dxvk.conf`, vkBasalt, MangoHud, sync options off, `PULSE_SINK` (DH) | hand |
