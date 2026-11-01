@@ -1,0 +1,79 @@
+game:
+  exe: drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the Deathly Hallows(TM)
+    - Part 1/pc/hp7.exe
+  launch_configs:
+  - exe: /home/bazzite/Games/harry-potter-and-the-deathly-hallows-part-1/drive_c/Program
+      Files (x86)/Electronic Arts/Harry Potter and the Deathly Hallows - Part 1/pc/d3d9.ini
+    name: Advanced graphic options
+  preferred_launch_config_index: 0
+  preferred_launch_config_name: (primary)
+  prefix: /home/bazzite/Games/harry-potter-and-the-deathly-hallows-part-1
+game_slug: harry-potter-and-the-deathly-hallows-part-1
+name: 'Harry Potter and the Deathly Hallows: Part 1'
+script:
+  files:
+  - game_patch: https://github.com/legluondunet/MyLittleLutrisScripts/raw/refs/heads/master/Harry%20Potter%20and%20the%20Deathly%20Hallows%20-%20Part%201/hp7_patch.exe.7z
+  - wrapper: https://github.com/legluondunet/MyLittleLutrisScripts/raw/refs/heads/master/Harry%20Potter%20and%20the%20Deathly%20Hallows%20-%20Part%201/hp7fixOriginalFOV.zip
+  game:
+    exe: drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the Deathly
+      Hallows - Part 1/pc/hp7.exe
+    launch_configs:
+    - exe: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Deathly Hallows - Part 1/pc/d3d9.ini
+      name: Advanced graphic options
+    prefix: $GAMEDIR
+  installer:
+  - task:
+      arch: win64
+      prefix: /home/bazzite/Games/harry-potter-and-the-deathly-hallows-part-1
+      wine_path: /usr/bin/umu-run
+  - insert-disc:
+      requires: hpdh1.ico
+  - task:
+      arch: win64
+      env: {}
+      executable: /run/media/bazzite/HPDH1/AutoRun.exe
+      prefix: /home/bazzite/Games/harry-potter-and-the-deathly-hallows-part-1
+      wine_path: /usr/bin/umu-run
+  - execute:
+      command: cd "$GAMEDIR/drive_c/Program Files (x86)/Electronic Arts"; if [ -d
+        "Harry Potter and the Deathly Hallows - Part 1" ]; then exit; else gamepath=$(find
+        . -maxdepth 1 -type d -iname "*Harry*"); gamepath=$(basename "$gamepath");
+        ln -s "$gamepath" "Harry Potter and the Deathly Hallows - Part 1"; fi;
+  - merge:
+      dst: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Deathly Hallows - Part 1/pc/backup
+      src: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Deathly Hallows - Part 1/pc/hp7.exe
+  - extract:
+      dst: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Deathly Hallows - Part 1/pc
+      file: game_patch
+  - extract:
+      dst: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Deathly Hallows - Part 1/pc
+      file: wrapper
+  wine:
+    overrides:
+      d3d9: n,b
+slug: harry-potter-and-the-deathly-dvd-chip-biscuit-wra
+system:
+  env:
+    DXVK_CONFIG_FILE: /home/bazzite/Games/harry-potter-and-the-deathly-hallows-part-1/drive_c/Program
+      Files (x86)/Electronic Arts/Harry Potter and the Deathly Hallows - Part 1/pc/dxvk.conf
+    ENABLE_VKBASALT: '1'
+    MANGOHUD: '1'
+    MANGOHUD_CONFIGFILE: /home/bazzite/.config/MangoHud/hp7.conf
+    PROTON_NO_ESYNC: '1'
+    PROTON_NO_FSYNC: '1'
+    PROTON_NO_NTSYNC: '1'
+    PULSE_SINK: movie_eq
+    VKBASALT_CONFIG_FILE: /home/bazzite/.config/vkBasalt/hp7.conf
+version: DVD+ Chip-Biscuit wrapper
+wine:
+  esync: false
+  fsync: false
+  overrides:
+    d3d9: n,b
+  show_debug: -all
+year: 2010

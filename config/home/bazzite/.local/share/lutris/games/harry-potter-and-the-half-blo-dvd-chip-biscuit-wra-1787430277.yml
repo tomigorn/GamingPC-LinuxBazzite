@@ -1,0 +1,94 @@
+game:
+  exe: drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the Half Blood
+    Prince/pc/hp6.exe
+  launch_configs:
+  - exe: /home/bazzite/Games/harry-potter-and-the-half-blood-prince/drive_c/Program
+      Files (x86)/Electronic Arts/Harry Potter and the Half Blood Prince/pc/d3d9.ini
+    name: Advanced graphic options
+  prefix: /home/bazzite/Games/harry-potter-and-the-half-blood-prince
+game_slug: harry-potter-and-the-half-blood-prince
+name: Harry Potter and the Half Blood Prince
+script:
+  files:
+  - game_patch: https://github.com/legluondunet/MyLittleLutrisScripts/raw/refs/heads/master/Harry%20Potter%20and%20the%20Half%20Blood%20Prince/hp6_patch.zip
+  - wrapper: https://github.com/legluondunet/MyLittleLutrisScripts/raw/refs/heads/master/Harry%20Potter%20and%20the%20Half%20Blood%20Prince/hphbpfix60fps.zip
+  game:
+    exe: drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the Half Blood
+      Prince/pc/hp6.exe
+    launch_configs:
+    - exe: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Half Blood Prince/pc/d3d9.ini
+      name: Advanced graphic options
+    prefix: $GAMEDIR
+  installer:
+  - insert-disc:
+      requires: hbp_icon.ico
+  - task:
+      arch: win64
+      prefix: /home/bazzite/Games/harry-potter-and-the-half-blood-prince
+      wine_path: /usr/bin/umu-run
+  - task:
+      arch: win64
+      env: {}
+      executable: /run/media/bazzite/HarryPotter/AutoRun.exe
+      prefix: /home/bazzite/Games/harry-potter-and-the-half-blood-prince
+      wine_path: /usr/bin/umu-run
+  - execute:
+      command: cd "$GAMEDIR/drive_c/Program Files (x86)/Electronic Arts"; if [ -d
+        "Harry Potter and the Half Blood Prince" ]; then exit; else gamepath=$(find
+        . -maxdepth 1 -type d -iname "*Harry*"); gamepath=$(basename "$gamepath");
+        ln -s "$gamepath" "Harry Potter and the Half Blood Prince"; fi;
+  - merge:
+      dst: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Half Blood Prince/pc/backup
+      src: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Half Blood Prince/pc/hp6.exe
+  - extract:
+      dst: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Half Blood Prince/pc
+      file: game_patch
+  - task:
+      arch: win64
+      key: OptionResolution
+      path: HKEY_CURRENT_USER\Software\Electronic Arts\Harry Potter and the Half Blood
+        Prince\GameSettings
+      prefix: /home/bazzite/Games/harry-potter-and-the-half-blood-prince
+      type: REG_DWORD
+      value: '00000000'
+      wine_path: /usr/bin/umu-run
+  - task:
+      arch: win64
+      key: OptionLOD
+      path: HKEY_CURRENT_USER\Software\Electronic Arts\Harry Potter and the Half Blood
+        Prince\GameSettings
+      prefix: /home/bazzite/Games/harry-potter-and-the-half-blood-prince
+      type: REG_DWORD
+      value: '00000002'
+      wine_path: /usr/bin/umu-run
+  - extract:
+      dst: $GAMEDIR/drive_c/Program Files (x86)/Electronic Arts/Harry Potter and the
+        Half Blood Prince/pc
+      file: wrapper
+  wine:
+    overrides:
+      d3d9: n,b
+slug: harry-potter-and-the-half-blo-dvd-chip-biscuit-wra
+system:
+  env:
+    DXVK_CONFIG_FILE: /home/bazzite/Games/harry-potter-and-the-half-blood-prince/drive_c/Program
+      Files (x86)/Electronic Arts/Harry Potter and the Half Blood Prince/pc/dxvk.conf
+    ENABLE_VKBASALT: '1'
+    MANGOHUD: '1'
+    MANGOHUD_CONFIGFILE: /home/bazzite/.config/MangoHud/hp6.conf
+    PROTON_NO_ESYNC: '1'
+    PROTON_NO_FSYNC: '1'
+    PROTON_NO_NTSYNC: '1'
+    VKBASALT_CONFIG_FILE: /home/bazzite/.config/vkBasalt/vkBasalt.conf
+version: DVD + Chip-Biscuit wrapper
+wine:
+  esync: false
+  fsync: false
+  overrides:
+    d3d9: n,b
+  show_debug: -all
+year: 2009
