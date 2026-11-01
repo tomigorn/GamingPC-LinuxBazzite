@@ -1,5 +1,5 @@
 [Unit]
-Description=Claude Code remote-control (runs inside distrobox 'dev')
+Description=Claude Code remote-control (runs inside distrobox 'vscode')
 Documentation=https://claude.ai/code
 After=network-online.target
 Wants=network-online.target
@@ -11,10 +11,10 @@ Type=exec
 # User services get a minimal env; pin a PATH that can find distrobox/podman.
 Environment=PATH=/usr/bin:/usr/local/bin:/bin
 WorkingDirectory=%h
-# Runs INSIDE the 'dev' container (full Fedora dev toolchain) but is owned by
+# Runs INSIDE the 'vscode' container (full Fedora dev toolchain) but is owned by
 # the always-on HOST user manager, so it survives reboots via linger.
 # bash -lc sources the login env so remote sessions inherit your dev PATH.
-ExecStart=/usr/bin/distrobox enter --no-tty --name dev -- bash -lc 'cd "$HOME/claude-remote" && exec "$HOME/.local/bin/claude" remote-control --name bazzite --permission-mode auto'
+ExecStart=/usr/bin/distrobox enter --no-tty --name vscode -- bash -lc 'cd "$HOME/claude-remote" && exec "$HOME/.local/bin/claude" remote-control --name bazzite --permission-mode auto'
 Restart=always
 RestartSec=10
 

@@ -125,5 +125,3 @@ $ git log --format='%h %G? %s' -3
 Claude Code runs as the VS Code extension inside the `vscode` distrobox, plus the CLI in `~/.local/bin/claude`. Its instructions for this machine live in `~/.claude/CLAUDE.md`, and what it has learned about the setup lives in `~/.claude/projects/-home-bazzite/memory/`.
 
 `claude-remote.service` (user unit, copy in [`config/home/bazzite/.config/systemd/user/`](../config/home/bazzite/.config/systemd/user/)) keeps a `claude remote-control` session running so the machine can be reached from the Claude app, and `claude-remote-restart.timer` restarts it periodically.
-
-> **Known issue (2026-11-01):** the unit runs `distrobox enter --name dev`, but the container is now called `vscode`. The service is stuck in a restart loop until `dev` is changed to `vscode` in `~/.config/systemd/user/claude-remote.service`.
