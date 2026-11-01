@@ -7,16 +7,18 @@ How my gaming PC (`bazzite-prime`) is set up: Bazzite with KDE Plasma on Wayland
 | [System basics](docs/01-system.md) | hostname, GRUB/Windows first, what survives updates, layered packages, keyboard Fn keys |
 | [Dev environment](docs/02-dev-environment.md) | VS Code in the `vscode` distrobox, git + GitHub SSH key + commit signing, Claude Code |
 | [Updates](docs/03-updates.md) | Bazzite Updater with update summary, apps outside package managers, bees limits |
-| [Apps](docs/04-apps.md) | full inventory, PDFsam, Brave Teams PWA, Brave↔KeePassXC, Vesktop/Proton VPN fixes, FreeCAD (Fusion removed), games |
+| [Apps](docs/04-apps.md) | full inventory, PDFsam, Brave Teams PWA, Brave↔KeePassXC, Vesktop/Proton VPN fixes, FreeCAD (Fusion removed) |
 | [Desktop (KDE)](docs/05-desktop-kde.md) | tray widgets, favourites, fixing wrong/pixelated icons in Alt+Tab |
 | [USB peripherals](docs/06-usb-peripherals.md) | SteelSeries base station off at shutdown, BRIO camera fix, battery widget |
 | [Audio](docs/07-audio.md) | "Sonar" sinks with 7.1 HRTF, Discord streaming without losing dialogue |
 | [Storage and sync](docs/08-storage-sync.md) | NTFS data partition, SMB share from fastpi, OneDrive |
 | [qBittorrent behind VPN](docs/09-qbittorrent-vpn.md) | podman quadlets, how "no VPN, no torrenting" is enforced |
+| [Games](games/README.md) | installed games, Proton per game, MangoHud/vkBasalt, per-game tweaks |
 
 ## Repo layout
 
 - `docs/`: the write-ups above.
+- `games/`: one table of all games, plus a page per game that needs tweaks.
 - `config/`: copies of the actual files, at their paths on the machine (`config/etc/...` = `/etc/...`, `config/usr/local/...` = `/usr/local/...`, `config/home/bazzite/...` = `~/...`). `config/camera-usb-cycle/` is a self-contained installer.
 - `archive/`: superseded files (old `fnkeys.service` and the first SteelSeries shutdown service), kept for reference.
 

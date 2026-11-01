@@ -170,7 +170,4 @@ It runs on XWayland, so Alt+Tab picks up the icon from the window by itself.
 
 ## Games
 
-Steam and Lutris games get start-menu entries in `~/.local/share/applications` and icons in `~/.local/share/icons/hicolor/256x256/apps/`.
-
-- **Crimson Desert**: a KWin window rule (`~/.config/kwinrulesrc`) forces it onto a specific screen.
-- **Harry Potter and the Deathly Hallows Part 1** (Lutris): `PULSE_SINK: movie_eq` in its Lutris `system.env`, because dialogue was too thin on the 7.1 HRTF sink. See [Audio](07-audio.md).
+See [games/](../games/README.md): every installed game, which Proton it runs on, and per-game tweaks.

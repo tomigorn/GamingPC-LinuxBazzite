@@ -19,7 +19,7 @@ The game sinks are 7.1 inputs that are rendered to binaural stereo with HeSuVi i
 
 `10-no-upmix.conf` (in `pipewire-pulse.conf.d` and `client.conf.d`) stops PipeWire from upmixing stereo to 7.1, so stereo content isn't smeared across virtual speakers.
 
-Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env`. That's what *Harry Potter and the Deathly Hallows Part 1* uses (dialogue was too thin on the DTS sink).
+Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env`. That's what *Harry Potter and the Deathly Hallows Part 1* uses, see [games](../games/harry-potter-6-7.md).
 
 ## Streaming 7.1 games in Discord (Vesktop) without losing voices
 
