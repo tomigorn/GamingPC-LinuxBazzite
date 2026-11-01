@@ -19,6 +19,19 @@ Copies of every file below are in [`config/`](../config/home/bazzite/), at the s
 2. **Deathly Hallows only:** the DVD installs into `Harry Potter and the Deathly Hallows(TM) - Part 1`, but the script expects the name without `(TM)`. The installer's own step adds a symlink without it. If the game won't start, check that the symlink exists in `drive_c/Program Files (x86)/Electronic Arts/`, and that the Lutris `exe:` points at the `(TM)` folder.
 3. Apply the tweaks below. The Lutris YAMLs have backups of their state before the tweaks (`*.bak-original`, `*.bak-before-visuals`).
 
+## What the installer does vs. what was changed by hand
+
+All of it was done on this Linux install (HBP installed 2026-08-22, tweaked the next night; DH installed and tweaked 2026-10-05).
+
+| Change | By |
+|---|---|
+| official game patch, wrapper (`d3d9.dll` + `d3d9.ini`: 60 fps fix for HBP, FOV fix for DH), `d3d9: n,b` override, HBP registry defaults for resolution and LOD | Lutris installer |
+| `d3d9.ini`: `UsePrimaryMonitor` 0 → 1 (both) | hand |
+| `d3d9.ini`: resolution 1600×900 → 2560×1440 (HBP) | hand |
+| `dxvk.conf`, vkBasalt, MangoHud, sync options off, `PULSE_SINK` (DH) | hand |
+
+`pc/maps/*.cmap` are controller maps the game writes itself when an Xbox controller is connected, not a tweak.
+
 ## Tweaks
 
 All in the game's Lutris config (`~/.local/share/lutris/games/<slug>-<id>.yml`, *Configure → System options → Environment variables*):
