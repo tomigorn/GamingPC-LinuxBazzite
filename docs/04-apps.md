@@ -46,6 +46,7 @@ In order of preference:
 | App | ID | Notes |
 |---|---|---|
 | Bambu Studio | `com.bambulab.BambuStudio` | 3D printer slicer |
+| FreeCAD | `org.freecad.FreeCAD` | parametric 3D CAD, replaces Fusion, see below |
 | PDF Arranger | `com.github.jeromerobert.pdfarranger` | merge/reorder PDFs, imports JPG/PNG directly |
 | QDirStat | `io.github.shundhammer.qdirstat` | disk usage. *View → Mounted Filesystems* shows free space |
 
@@ -73,7 +74,6 @@ Everything else in `brew list` is a dependency of these.
 | App | Where |
 |---|---|
 | PDFsam Basic | `~/.local/opt/pdfsam`, see below |
-| Autodesk Fusion | `~/.autodesk_fusion`, see below |
 | headsetcontrol | `~/.local/bin/headsetcontrol`, see [USB peripherals](06-usb-peripherals.md) |
 
 ---
@@ -138,15 +138,29 @@ Flatpak updates don't touch any of this.
 
 The Flatpak's launcher declares `StartupWMClass=protonvpn-app`, but the window's real app id is `proton.vpn.app.gtk`, so the task bar labelled it "python" with a generic icon. Fixed with an overriding `com.protonvpn.www.desktop` (`StartupWMClass=proton.vpn.app.gtk`) and a `proton.vpn.app.gtk.desktop` stub. Both are in [`config/.../applications/`](../config/home/bazzite/.local/share/applications/).
 
-## Autodesk Fusion (via Proton)
+## CAD: FreeCAD
 
-Free personal licence, installed with the cryinkfly community installer, which moved from GitHub to **Codeberg** in Feb 2026. It runs on **GE-Proton11-5**, not Wine, and uses ~11 GB in `~/.autodesk_fusion`. The patched installer and its log are in `~/fusion360-install/`.
+FOSS (LGPL) parametric CAD, native on Linux, from Flathub. Since 1.0 it fixes the old topological-naming breakage and has a built-in Assembly workbench.
+
+```bash
+flatpak install --user flathub org.freecad.FreeCAD
+```
+
+- Workflow like Fusion: **Part Design** workbench (sketch → pad/pocket/fillet).
+- Prints: export STL/3MF, slice in Bambu Studio.
+- Old Fusion designs (`.f3d`) can't be opened. Export them as STEP from the Fusion web app (fusion.online.autodesk.com) and import that. One cached design is saved in `~/Documents/Fusion360-export/`.
+
+## Removed: Autodesk Fusion (via Proton)
+
+Removed on 2026-11-01: too buggy to use under Proton. Kept here in case it's ever retried.
+
+Free personal licence, installed with the cryinkfly community installer, which moved from GitHub to **Codeberg** in Feb 2026. It ran on **GE-Proton11-5**, not Wine, and used ~11 GB in `~/.autodesk_fusion`.
 
 ```bash
 ./autodesk_fusion_installer_x86-64.sh --proton=GE-Proton11-5-x86_64 --default
 ```
 
-Three Bazzite-specific fixes, **all needed again after a reinstall**:
+Three Bazzite-specific fixes, **all needed again on a reinstall**:
 
 1. **Installer quits on unknown distro.** Remove `"wbinfo"` from `REQUIRED_COMMANDS` in the script (Wine auth, irrelevant under Proton). Don't fake Fedora instead, or it runs `sudo dnf` against the host.
 2. **Launcher fails with `AUTODESK_ROOT_DIRECTORY does not match`.** `/home` is a symlink to `/var/home`. Rewrite line 2 of `~/.autodesk_fusion/logs/wineprefixes.log` to the `/var/home/...` form, and leave line 3 alone. Re-running the installer undoes this.
