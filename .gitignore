@@ -1,0 +1,11 @@
+# AI working files
+docs/superpowers/
+.claude/settings.local.json
+CLAUDE.local.md
+AGENTS.md
+
+# editor / OS
+.vscode/
+*.swp
+.DS_Store
+__pycache__/
