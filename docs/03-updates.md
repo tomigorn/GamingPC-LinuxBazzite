@@ -72,5 +72,3 @@ OOMScoreAdjust=1000
 OOMPolicy=stop
 IOSchedulingClass=idle
 ```
-
-(`bees-timeout.conf` in the same directory has identical content. One of the two can go.)
