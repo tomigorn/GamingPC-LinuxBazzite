@@ -1,0 +1,14 @@
+[Desktop Entry]
+# Not a menu entry. The Proton VPN GTK app's Wayland app_id is
+# "proton.vpn.app.gtk", which matches neither its flatpak desktop file
+# (com.protonvpn.www.desktop) nor that file's StartupWMClass. KWin resolves the
+# Alt+Tab icon by looking up "<app_id>.desktop" literally, so this stub gives it
+# something to find. StartupWMClass is deliberately omitted so the Plasma task
+# manager keeps matching windows to com.protonvpn.www.desktop.
+Type=Application
+Name=Proton VPN
+Icon=com.protonvpn.www
+Exec=/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=protonvpn-app --file-forwarding com.protonvpn.www @@u %u @@
+Terminal=false
+NoDisplay=true
+Categories=Network;

@@ -1,0 +1,23 @@
+[Unit]
+Description=Power-cycle the Logitech BRIO USB socket on shutdown and reboot
+Documentation=https://github.com/tomigorn/GamingPC-LinuxBazzite
+DefaultDependencies=no
+# Run before filesystems unmount, so /var (script, state cache and log) and the
+# USB stack are still available. Before=umount.target is the reliable guarantee
+# that /var is still mounted (stronger than RequiresMountsFor=).
+Before=umount.target poweroff.target halt.target reboot.target
+
+[Service]
+Type=oneshot
+# A real script, NOT an inlined command: systemd does its own $VAR expansion on
+# ExecStart lines, which silently eats shell variables.
+ExecStart=/usr/local/bin/camera-usb-reset.sh --shutdown
+# Generous: the cycle itself holds VBUS down for OFF_SECONDS (default 5).
+TimeoutStartSec=30
+
+[Install]
+# Unlike the SteelSeries unit, reboot.target IS included on purpose. Pressing
+# F12 to boot Windows is a WARM reboot: VBUS is never interrupted, so a wedged
+# camera stays wedged straight through into Windows, breaking Windows Hello and
+# the Camera app. Cycling here is the whole point of this unit.
+WantedBy=poweroff.target halt.target reboot.target

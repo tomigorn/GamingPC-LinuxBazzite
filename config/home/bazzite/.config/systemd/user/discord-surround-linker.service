@@ -1,0 +1,11 @@
+[Unit]
+Description=Link surround channels of apps shared in Vesktop streams into the downmix
+After=discord-surround-downmix.service
+BindsTo=discord-surround-downmix.service
+
+[Service]
+ExecStart=%h/.local/bin/discord-surround-linker
+Restart=on-failure
+
+[Install]
+WantedBy=discord-surround-downmix.service

@@ -1,0 +1,20 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "you@example.com",
+                "Name": "bazzite"
+            }
+        ],
+        "Category": "System Services",
+        "Description": "qBittorrent locked behind the ProtonVPN tunnel: status and controls",
+        "Icon": "qbittorrent",
+        "Id": "org.kde.plasma.qbittorrentvpn",
+        "License": "MIT",
+        "Name": "qBittorrent (VPN)",
+        "Version": "1.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationAreaCategory": "ApplicationStatus"
+}

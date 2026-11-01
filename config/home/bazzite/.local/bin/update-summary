@@ -1,0 +1,244 @@
+#!/usr/bin/bash
+# Runs the standard Bazzite update (uupd via uupd-manual.service) with readable
+# live progress, then prints a grouped report of what actually changed.
+#
+# Live lines come from uupd's log stream; the per-item results come from
+# before/after package snapshots, so the report is correct regardless of how
+# flatpak/dnf/brew happen to format their output.
+
+set -uo pipefail
+
+# Needs the host: rpm-ostree, flatpak, brew and podman all live there.
+if [ -f /run/.containerenv ]; then
+    exec distrobox-host-exec "$0" "$@"
+fi
+
+BREW=/home/linuxbrew/.linuxbrew/bin/brew
+TMP=$(mktemp -d)
+
+if [ -t 1 ]; then
+    B=$'\e[1m'; D=$'\e[2m'; G=$'\e[32m'; Y=$'\e[33m'; C=$'\e[36m'; RD=$'\e[31m'; R=$'\e[0m'
+else
+    B=; D=; G=; Y=; C=; RD=; R=
+fi
+
+# With no tty we are being read by bazzite-updater's console, which parses
+# uupd's JSON records itself (QJsonDocument) to drive its progress card and
+# Debug:/Info: prefixes. In that mode pass uupd's records through untouched and
+# add only the summary, so the GUI keeps working exactly as it does today.
+if [ -t 1 ]; then GUI=0; else GUI=1; fi
+# GUI console strips leading spaces; a glyph keeps sub-items distinguishable
+if [ "$GUI" = 1 ]; then IND="  · "; BOXPFX="▸ "; SUBLBL="▸ "
+else IND="               "; BOXPFX="    "; SUBLBL="  "; fi
+
+containers=$(podman ps -a --filter label=manager=distrobox --format '{{.Names}}' 2>/dev/null)
+
+snap_brew()    { "$BREW" list --versions 2>/dev/null | awk '{print $1, $2}' | sort > "$TMP/brew.$1"; }
+snap_flatpak() { flatpak list --app --columns=application,version 2>/dev/null | sort > "$TMP/flatpak.$1"; }
+snap_image()   { rpm-ostree status --json 2>/dev/null \
+                   | jq -r '[.deployments[]|select(.booted).version] + [.deployments[]|select(.staged).version] | @tsv' \
+                   > "$TMP/image.$1"; }
+# tarball installs uupd cannot see, each updated by its own ~/.local/bin/<name>-update
+snap_apps()    { readlink "$HOME/.local/opt/pdfsam" 2>/dev/null \
+                   | sed -n 's/^pdfsam-basic-\(.*\)-linux-x64$/pdfsam \1/p' > "$TMP/apps.$1"; }
+snap_boxes()   { local c; for c in $containers; do
+                   distrobox enter -n "$c" -- rpm -qa --qf '%{NAME} %{EVR}\n' 2>/dev/null | sort > "$TMP/box.$c.$1"
+                 done; }
+
+# name-keyed diff -> "<upgraded> <added> <removed>" then one line per change
+pkgdiff() {
+    awk '
+        NR==FNR { b[$1]=$2; next }
+        { a[$1]=$2 }
+        END {
+            for (p in a)
+                if (!(p in b)) add[++na] = "+ " p " " a[p]
+                else if (b[p] != a[p]) upg[++nu] = p " " b[p] " → " a[p]
+            for (p in b) if (!(p in a)) rem[++nr] = "- " p " " b[p]
+            print nu+0, na+0, nr+0
+            for (i = 1; i <= nu; i++) print upg[i]
+            for (i = 1; i <= na; i++) print add[i]
+            for (i = 1; i <= nr; i++) print rem[i]
+        }' "$1" "$2" 2>/dev/null
+}
+
+hb_active=0
+hb_clear() { [ "$hb_active" = 1 ] && [ -t 1 ] && printf '\r%*s\r' 46 ''; hb_active=0; }
+hb_tick()  { [ -t 1 ] || return 0
+             printf '\r    %s… %ds%s' "$D" "$(( $(date +%s) - step_start ))" "$R"; hb_active=1; }
+
+step()   { hb_clear; step_start=$(date +%s); printf '\n%s▸ %s%s\n' "$B" "$1" "$R"; }
+detail() { hb_clear; printf '    %s· %.100s%s\n' "$D" "$1" "$R"; }
+done_item() { hb_clear; printf '    %s✔%s %s\n' "$G" "$R" "$1"; }
+
+# Print the changes for one category, capped for the live view. $1 label, $2 before, $3 after
+live_result() {
+    local out n
+    out=$(pkgdiff "$2" "$3")
+    read -r u a r <<<"$(head -1 <<<"$out")"
+    n=$((u + a + r))
+    if [ "$n" -eq 0 ]; then
+        printf '    %snothing to update%s\n' "$D" "$R"
+        return
+    fi
+    tail -n +2 <<<"$out" | head -6 | while IFS= read -r line; do done_item "$line"; done
+    [ "$n" -gt 6 ] && printf '    %s… and %d more%s\n' "$D" "$((n - 6))" "$R"
+    return 0
+}
+
+finalize() { # $1 = category that just finished
+    case $1 in
+        brew)    snap_brew after;    live_result Brew    "$TMP/brew.before"    "$TMP/brew.after" ;;
+        flatpak) snap_flatpak after; live_result Flatpak "$TMP/flatpak.before" "$TMP/flatpak.after" ;;
+        box)     snap_boxes after
+                 for c in $containers; do
+                     printf '%s%s%s%s\n' "$BOXPFX" "$C" "$c" "$R"
+                     live_result "$c" "$TMP/box.$c.before" "$TMP/box.$c.after"
+                 done ;;
+        *)       : ;;
+    esac
+    finalized="$finalized $1"
+}
+
+category_of() {
+    case $1 in
+        Brew)      echo brew ;;
+        Flatpak)   echo flatpak ;;
+        Distrobox) echo box ;;
+        *)         echo system ;;
+    esac
+}
+
+# ---------------------------------------------------------------- run
+
+printf '\n%s%s%s\n' "$B" "Bazzite update" "$R"
+
+snap_brew before; snap_flatpak before; snap_image before; snap_boxes before; snap_apps before
+start=$(date +%s)
+step_start=$start
+: > "$TMP/failures"
+finalized=""
+
+exec {JFD}< <(journalctl -u uupd-manual.service -f --lines=0 -o cat --synchronize-on-exit=yes 2>/dev/null \
+    | jq -rR --unbuffered 'fromjson? // empty
+        | [.level, (.msg // ""), (.title // ""), (.description // ""), ((.overall // "") | tostring), tojson]
+        | map(tostring | gsub("[\n\r]"; " ")) | join("\u001f")')
+JQPIPE=$!
+
+run_update() {
+    systemctl start --wait uupd-manual.service 2>/dev/null && return 0
+    [ -t 1 ] || return 1
+    sudo systemctl start --wait uupd-manual.service
+}
+run_update &
+SPID=$!
+trap 'kill $SPID $JQPIPE 2>/dev/null; rm -rf "$TMP"' EXIT
+
+cur=""
+while :; do
+    if IFS=$'\x1f' read -r -t 5 -u "$JFD" level msg title desc overall raw; then
+        [ "$GUI" = 1 ] && printf '%s\n' "$raw"
+        case $level in
+        INFO)
+            if [ "$msg" = "Updating" ]; then
+                cat=$(category_of "$title")
+                if [ "$cat" != "$cur" ]; then
+                    [ -n "$cur" ] && finalize "$cur"
+                    [ "$GUI" = 0 ] && step "$title${desc:+ — $desc}${overall:+  ${D}${overall}%${R}}"
+                    cur=$cat
+                fi
+            elif [[ $msg == *"Completed Successfully"* ]]; then
+                break
+            elif [[ $msg == *ailed* ]]; then
+                echo "$msg" >> "$TMP/failures"; break
+            fi ;;
+        ERROR|WARN)
+            echo "$msg" >> "$TMP/failures" ;;
+        DEBUG)
+            # command output, streamed live; skip blank and giant records
+            [ "$GUI" = 0 ] && [ -n "$msg" ] && [ "${#msg}" -lt 200 ] \
+                && [[ ! $msg =~ ^[A-Za-z]+\ module$ ]] && detail "$msg" ;;
+        esac
+    else
+        rst=$?
+        kill -0 "$SPID" 2>/dev/null || break
+        if [ "$rst" -gt 128 ]; then
+            hb_tick            # timed out: still running, just quiet
+        else
+            sleep 0.5          # EOF: stream died, do not spin
+        fi
+    fi
+done
+
+wait "$SPID"; rc=$?
+hb_clear
+kill "$JQPIPE" 2>/dev/null
+[ -n "$cur" ] && finalize "$cur"
+
+# anything uupd never announced still gets compared
+for c in brew flatpak box; do
+    [[ " $finalized " == *" $c "* ]] || case $c in
+        brew) snap_brew after ;; flatpak) snap_flatpak after ;; box) snap_boxes after ;;
+    esac
+done
+[ "$GUI" = 0 ] && step "Apps — tarball installs"
+"$HOME/.local/bin/pdfsam-update" 2>>"$TMP/failures" >/dev/null
+snap_apps after
+[ "$GUI" = 0 ] && live_result Apps "$TMP/apps.before" "$TMP/apps.after"
+snap_image after
+elapsed=$(( $(date +%s) - start ))
+
+# ---------------------------------------------------------------- summary
+
+section() { # $1 label, $2 before, $3 after
+    local out u a r
+    out=$(pkgdiff "$2" "$3")
+    read -r u a r <<<"$(head -1 <<<"$out")"
+    if [ "$((u + a + r))" -eq 0 ]; then
+        printf '  %s%-10s%s %snothing needed updating%s\n' "$B" "$1" "$R" "$D" "$R"
+        return
+    fi
+    printf '  %s%-10s%s %s%d%s changed\n' "$B" "$1" "$R" "$G" "$((u + a + r))" "$R"
+    tail -n +2 <<<"$out" | head -12 | sed "s|^|$IND|"
+    [ "$((u + a + r))" -gt 12 ] && printf '%s%s… and %d more%s\n' "$IND" "$D" "$((u + a + r - 12))" "$R"
+}
+
+echo
+printf '%s╭─ Summary ────────────────────────────────────────────%s\n' "$B" "$R"
+printf '%s│%s %s\n' "$B" "$R" "$(date '+%a %d %b %Y, %H:%M')"
+printf '%s╰──────────────────────────────────────────────────────%s\n\n' "$B" "$R"
+
+booted=$(cut -f1 "$TMP/image.after"); staged=$(cut -s -f2 "$TMP/image.after")
+if [ -n "$staged" ] && [ "$staged" != "$booted" ]; then
+    printf '  %s%-10s%s %s → %s  %sreboot to apply%s\n' "$B" "Bazzite OS" "$R" "$booted" "$staged" "$Y" "$R"
+    rpm-ostree db diff --format=diff 2>/dev/null \
+      | awk '/^\+/{a++} /^-/{r++} /^!/{u++} END {if (a+r+u) printf "               %d upgraded, %d added, %d removed\n", u+0, a+0, r+0}'
+else
+    printf '  %s%-10s%s %snothing needed updating%s  %s(%s)%s\n' "$B" "Bazzite OS" "$R" "$D" "$R" "$D" "$booted" "$R"
+fi
+
+section "Flatpaks" "$TMP/flatpak.before" "$TMP/flatpak.after"
+section "Brew"     "$TMP/brew.before"    "$TMP/brew.after"
+section "Apps"     "$TMP/apps.before"    "$TMP/apps.after"
+
+printf '  %s%s%s\n' "$B" "Distrobox" "$R"
+for c in $containers; do
+    section "$SUBLBL$c" "$TMP/box.$c.before" "$TMP/box.$c.after"
+done
+
+fw=$(timeout 25 fwupdmgr get-updates --no-unreported-check 2>/dev/null | grep -cE '^│|Upgrades? ')
+if [ "${fw:-0}" -gt 0 ]; then
+    printf '  %s%-10s%s %s%d available%s %s— uupd does not do firmware; run: fwupdmgr update%s\n' \
+        "$B" "Firmware" "$R" "$Y" "$fw" "$R" "$D" "$R"
+else
+    printf '  %s%-10s%s %sno updates%s\n' "$B" "Firmware" "$R" "$D" "$R"
+fi
+
+echo
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/failures" ]; then
+    printf '  %s✔ success%s  %sin %dm %02ds%s\n\n' "$G" "$R" "$D" $((elapsed / 60)) $((elapsed % 60)) "$R"
+else
+    printf '  %s✘ finished with problems%s (exit %d)\n' "$RD" "$R" "$rc"
+    sed 's/^/      /' "$TMP/failures" 2>/dev/null
+    printf '      %sfull log: journalctl -u uupd-manual.service -e%s\n\n' "$D" "$R"
+fi

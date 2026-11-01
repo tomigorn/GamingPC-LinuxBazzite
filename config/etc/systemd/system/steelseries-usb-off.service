@@ -1,0 +1,22 @@
+[Unit]
+Description=Power off SteelSeries base station USB port on shutdown (OLED dark)
+Documentation=https://github.com/tomigorn/GamingPC-LinuxBazzite
+DefaultDependencies=no
+# Run before filesystems unmount, so /var (the script + log) and the USB stack
+# are still available. This "Before=umount.target" ordering is the reliable
+# guarantee that /var is mounted when we run (stronger than RequiresMountsFor=);
+# the shutdown journal confirms this unit starts at the very beginning of the
+# shutdown transaction, long before unmounting.
+Before=umount.target poweroff.target halt.target
+# Deliberately NOT ordered into reboot.target: a reboot on this dual-boot box
+# goes to Windows, and leaving the port powered lets Windows enumerate the dock.
+
+[Service]
+Type=oneshot
+# A real script — NOT an inlined shell command — because systemd expands $VARs
+# in ExecStart itself, which would eat the shell's "$hub"/"$port".
+ExecStart=/usr/local/bin/steelseries-usb-off.sh
+TimeoutStartSec=20
+
+[Install]
+WantedBy=poweroff.target halt.target

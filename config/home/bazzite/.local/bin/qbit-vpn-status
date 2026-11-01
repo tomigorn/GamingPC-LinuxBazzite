@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Status collector for the qBittorrent (VPN) tray widget. Prints one JSON line.
+# Runs on the host, where plasmashell and podman live.
+#
+#   qbit-vpn-status            cheap: systemd + podman + files only. Polled always.
+#   qbit-vpn-status --stats    adds live transfer figures. Only while the panel
+#                              is open, because it costs a podman exec (~115ms).
+set -uo pipefail
+
+QBIT_DIR="$HOME/.local/share/qbit-vpn"
+
+gluetun=$(systemctl --user is-active gluetun.service 2>/dev/null)
+qbit=$(systemctl --user is-active qbittorrent.service 2>/dev/null)
+
+health=""
+if [ "$gluetun" = "active" ]; then
+  health=$(podman inspect -f '{{.State.Health.Status}}' gluetun 2>/dev/null)
+fi
+
+# These files survive a shutdown, so a stale value would otherwise be reported
+# as current while nothing is running.
+port=""; ip=""
+if [ "$qbit" = "active" ]; then
+  port=$(cat "$QBIT_DIR/gluetun/forwarded_port" 2>/dev/null | tr -dc '0-9')
+  # Written by gluetun from inside the tunnel, so this IS the public address
+  # qBittorrent's traffic leaves from - it shares gluetun's network namespace.
+  ip=$(cat "$QBIT_DIR/gluetun/ip" 2>/dev/null | tr -dc '0-9a-fA-F.:')
+fi
+
+# This machine's REAL public address, fetched over the normal route - NOT through
+# the tunnel. It is the other half of the proof: if what peers see ever equals
+# this, the traffic is not tunnelled. Cached for 15 min so the 6s poll does not
+# hammer an external service; one request per quarter hour.
+REALIP_CACHE="$HOME/.cache/qbit-vpn-realip"
+realip=""
+if [ -s "$REALIP_CACHE" ] \
+   && [ "$(( $(date +%s) - $(stat -c %Y "$REALIP_CACHE" 2>/dev/null || echo 0) ))" -lt 900 ]; then
+  realip=$(cat "$REALIP_CACHE" 2>/dev/null | tr -dc '0-9a-fA-F.:')
+else
+  realip=$(curl -s --max-time 4 https://ipinfo.io/ip 2>/dev/null | tr -dc '0-9a-fA-F.:')
+  [ -z "$realip" ] && realip=$(curl -s --max-time 4 https://api.ipify.org 2>/dev/null | tr -dc '0-9a-fA-F.:')
+  if [ -n "$realip" ]; then
+    mkdir -p "$(dirname "$REALIP_CACHE")"
+    printf '%s' "$realip" > "$REALIP_CACHE"
+  else
+    # Network down: fall back to the last known value rather than reporting "" ,
+    # which the widget would otherwise read as "cannot compare".
+    realip=$(cat "$REALIP_CACHE" 2>/dev/null | tr -dc '0-9a-fA-F.:')
+  fi
+fi
+
+country=$(sed -n 's/^SERVER_COUNTRIES=//p' "$HOME/.config/qbit-vpn/proton.env" 2>/dev/null | head -1)
+
+# Written by qBittorrent's AutoRun hook inside the container (on-complete.sh).
+# A plain file read, so the always-on poll stays cheap - no API call needed to
+# know a download finished.
+COMPLOG="$QBIT_DIR/qbittorrent/completed.log"
+comp_count=0; comp_last=""
+if [ -s "$COMPLOG" ]; then
+  comp_count=$(wc -l < "$COMPLOG" | tr -dc '0-9')
+  comp_last=$(tail -n 1 "$COMPLOG")
+fi
+
+stats_json="{}"
+if [ "${1:-}" = "--stats" ] && [ "$qbit" = "active" ]; then
+  # qBittorrent only waives auth for genuine loopback peers, and podman's port
+  # publish rewrites the source address - so a request from the host gets 403.
+  # Asking from inside the container keeps the WebUI unauthenticated instead of
+  # weakening it with a subnet whitelist.
+  #
+  # sync/maindata carries server_state AND every torrent in one response, so the
+  # speeds, all-time totals, external address and per-torrent progress all come
+  # from a single curl.
+  stats_json=$(podman exec qbittorrent curl -s --max-time 5 \
+    'http://127.0.0.1:8080/api/v2/sync/maindata?rid=0' 2>/dev/null)
+  [ -n "$stats_json" ] || stats_json="{}"
+fi
+
+# Python does the JSON: torrent names are arbitrary text and would break any
+# printf-built output the moment one contained a quote or backslash.
+QB_STATS="$stats_json" \
+QB_COMPCOUNT="$comp_count" QB_COMPLAST="$comp_last" \
+QB_BASE="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+  "$gluetun" "$qbit" "$health" "$port" "$country" "$ip" "$realip")" \
+python3 <<'PYEOF'
+import json, os
+
+g, q, h, port, country, ip, realip = os.environ["QB_BASE"].split("\n")
+out = {"gluetun": g, "qbit": q, "health": h, "port": port,
+       "country": country, "ip": ip, "realip": realip,
+       "dl": 0, "up": 0, "dld": 0, "upd": 0, "conn": "",
+       "total": 0, "active": 0, "ext4": "", "ext6": "",
+       "alldl": 0, "allup": 0, "ratio": 0.0, "downloads": [],
+       "compcount": int(os.environ.get("QB_COMPCOUNT") or 0),
+       "complast": os.environ.get("QB_COMPLAST") or ""}
+
+try:
+    d = json.loads(os.environ.get("QB_STATS") or "{}")
+except Exception:
+    d = {}
+
+st = d.get("server_state", {}) or {}
+out["dl"] = st.get("dl_info_speed", 0)
+out["up"] = st.get("up_info_speed", 0)
+out["dld"] = st.get("dl_info_data", 0)
+out["upd"] = st.get("up_info_data", 0)
+out["alldl"] = st.get("alltime_dl", 0)
+out["allup"] = st.get("alltime_ul", 0)
+out["conn"] = st.get("connection_status", "")
+out["ext4"] = st.get("last_external_address_v4", "")
+out["ext6"] = st.get("last_external_address_v6", "")
+try:
+    out["ratio"] = round(float(st.get("global_ratio", 0) or 0), 2)
+except Exception:
+    pass
+
+torrents = d.get("torrents", {}) or {}
+out["total"] = len(torrents)
+out["active"] = sum(1 for t in torrents.values()
+                    if (t.get("dlspeed", 0) or 0) > 0 or (t.get("upspeed", 0) or 0) > 0)
+
+# Anything not finished and not stopped, newest progress first. 8640000 is
+# qBittorrent's "unknown/infinite" ETA sentinel.
+DL_STATES = {"downloading", "forcedDL", "metaDL", "stalledDL",
+             "queuedDL", "checkingDL", "allocating", "forcedMetaDL"}
+rows = []
+for t in torrents.values():
+    if t.get("state") in DL_STATES and (t.get("progress", 0) or 0) < 1:
+        eta = t.get("eta", 0) or 0
+        rows.append({"name": t.get("name", "?"),
+                     "progress": round((t.get("progress", 0) or 0) * 100, 1),
+                     "eta": (0 if eta >= 8640000 else eta),
+                     "dlspeed": t.get("dlspeed", 0) or 0,
+                     "state": t.get("state", "")})
+rows.sort(key=lambda r: -r["progress"])
+out["downloads"] = rows[:5]
+
+print(json.dumps(out))
+PYEOF

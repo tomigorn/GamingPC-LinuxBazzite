@@ -1,0 +1,2 @@
+UUID=EE74AD5974AD24F5	/mnt/Secondary	ntfs3	defaults,nofail,uid=1000,gid=1000,umask=022,windows_names,x-systemd.automount,x-gvfs-show,context=system_u:object_r:container_file_t:s0	0	0
+//192.168.1.2/mouse  /var/mnt/mouse  cifs  credentials=/etc/smb-mouse.cred,seal,vers=3.1.1,uid=1000,gid=1000,file_mode=0664,dir_mode=0775,_netdev,nofail,x-systemd.automount,x-systemd.mount-timeout=15,context=system_u:object_r:container_file_t:s0,x-gvfs-show  0 0

@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly restart of Claude remote-control at 04:00
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

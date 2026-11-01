@@ -1,0 +1,92 @@
+[Unit]
+Description=gluetun - ProtonVPN WireGuard tunnel (owns the netns qBittorrent lives in)
+After=network-online.target
+Wants=network-online.target
+
+# gluetun exists only to carry qBittorrent, so bring qBittorrent up with it.
+# Without this, `systemctl restart gluetun` leaves qBittorrent down: BindsTo= in
+# qbittorrent.container stops it when gluetun goes away, and PartOf= does not
+# start it again - so a config change applied by restarting gluetun silently
+# ended with a healthy tunnel and no qBittorrent. Wants= (not Requires=) so
+# stopping qBittorrent on its own still leaves the tunnel alone.
+Wants=qbittorrent.service
+
+[Container]
+ContainerName=gluetun
+Image=docker.io/qmcgaw/gluetun:v3
+AutoUpdate=registry
+
+AddCapability=NET_ADMIN
+AddDevice=/dev/net/tun
+
+Volume=%h/.local/share/qbit-vpn/gluetun:/gluetun:Z
+
+# qBittorrent's WebUI is published HERE, not on the qbittorrent container:
+# qBittorrent has no network stack of its own, it borrows this one.
+# Bound to loopback so the WebUI is not exposed to the LAN by default.
+PublishPort=127.0.0.1:8080:8080
+
+# Secrets (WireGuard private key) live here, mode 0600, out of the unit file.
+EnvironmentFile=%h/.config/qbit-vpn/proton.env
+
+Environment=VPN_SERVICE_PROVIDER=protonvpn
+Environment=VPN_TYPE=wireguard
+
+# Proton NAT-PMP port forwarding, and only ever pick servers that support it.
+Environment=VPN_PORT_FORWARDING=on
+Environment=PORT_FORWARD_ONLY=on
+Environment=VPN_PORT_FORWARDING_STATUS_FILE=/gluetun/forwarded_port
+
+# Default is /tmp/gluetun/ip, which lives inside the container. Writing it into
+# the mounted volume instead lets the tray widget read the real exit IP straight
+# off disk, so "behind the VPN" is shown as evidence rather than an assumption.
+Environment=PUBLICIP_FILE=/gluetun/ip
+# Quoted: quadlet splits Environment= on whitespace, which would otherwise
+# turn this one variable into three broken ones.
+Environment="VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /gluetun/set-qbit-port.sh {{PORTS}}"
+
+# Let the published WebUI port back in through gluetun's firewall.
+Environment=FIREWALL_INPUT_PORTS=8080
+Environment=FIREWALL_OUTBOUND_SUBNETS=192.168.1.0/24
+
+Environment=UPDATER_PERIOD=24h
+Environment=TZ=Europe/Zurich
+
+# Keeps the NAT mapping on the router alive so the tunnel does not go quiet
+# while idle. Same value as the mouse stack on fastpi.
+Environment=WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL=25s
+
+# --- The hard requirement: qBittorrent must never run without a live tunnel ---
+#
+# gluetun's own healthcheck actually reaches out through the tunnel, so it fails
+# on a wedged VPN, not merely on a dead process. Two things hang off it:
+#
+#   Notify=healthy    systemd does not call this service "started" until the
+#                     healthcheck passes. qbittorrent.service is ordered After=
+#                     this, so it cannot start against a half-open tunnel - the
+#                     systemd equivalent of compose's condition: service_healthy.
+#
+#   HealthOnFailure=kill  if the tunnel dies later, podman kills the container;
+#                     BindsTo= in qbittorrent.container then takes qBittorrent
+#                     down with it, and Restart=always rebuilds both.
+#
+# StartPeriod covers the cold start (tunnel negotiation + Proton server list).
+# 3 retries at 20s means ~1min of sustained failure before the stack is torn
+# down, so a brief blip does not kill an active session.
+HealthCmd=/gluetun-entrypoint healthcheck
+HealthInterval=20s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=60s
+HealthOnFailure=kill
+Notify=healthy
+
+[Service]
+Restart=always
+RestartSec=10
+# Tunnel negotiation + Proton server-list refresh can be slow on a cold start.
+TimeoutStartSec=180
+
+# No [Install] section on purpose: this stack is started on demand (app menu
+# or launch.sh), not at boot. Re-add "[Install]\nWantedBy=default.target" and
+# run `systemctl --user daemon-reload` to go back to starting automatically.

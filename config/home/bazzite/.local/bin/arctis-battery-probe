@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Watch the Arctis Nova Pro Wireless status report and report which bytes change.
+
+Used to identify the field holding the spare battery charging in the base station dock.
+HeadsetControl's 0x06 0xb0 query returns 63 bytes but only reads byte 6 (headset level,
+0-8 scale) and byte 15 (headset status). This polls that same read-only query and prints
+any byte that moves, so physically removing or inserting the spare battery reveals which
+offset tracks it.
+
+Usage:  arctis-battery-probe [seconds]      (default 90)
+
+While it runs: pull the spare battery out of the dock, wait a few seconds, put it back.
+"""
+
+import glob
+import os
+import select
+import sys
+import time
+
+POLL_INTERVAL = float(os.environ.get("ARCTIS_POLL_INTERVAL", "1.5"))
+WATCH_BYTES = 32  # everything past this is always zero in observed reports
+
+
+def find_node():
+    """Interface 4 of the 1038:12e0 base station, resolved by path not by hidrawN number
+    (the numbering shifts whenever devices re-enumerate)."""
+    for h in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        real = os.path.realpath(os.path.join(h, "device"))
+        if "1038:12E0" in real.upper() and real.rstrip("/").split("/")[-2].endswith(":1.4"):
+            return "/dev/" + os.path.basename(h), real
+    return None, None
+
+
+def query(fd):
+    """Send the battery/status query and return its response, or None on timeout."""
+    while select.select([fd], [], [], 0)[0]:  # drain unsolicited reports
+        try:
+            os.read(fd, 128)
+        except BlockingIOError:
+            break
+
+    os.write(fd, bytes([0x06, 0xB0]) + bytes(29))
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if not select.select([fd], [], [], remaining)[0]:
+            return None
+        buf = os.read(fd, 128)
+        if len(buf) > 15 and buf[0] == 0x06 and buf[1] == 0xB0:
+            return buf
+    return None
+
+
+def show(buf):
+    return " ".join("%02x" % b for b in buf[:WATCH_BYTES])
+
+
+def main():
+    # Line-buffer so the log is readable while running, not only once it exits --
+    # Python block-buffers stdout whenever it is a pipe rather than a terminal.
+    sys.stdout.reconfigure(line_buffering=True)
+
+    duration = float(sys.argv[1]) if len(sys.argv) > 1 else 90.0
+
+    node, real = find_node()
+    if not node:
+        sys.exit("Base station interface 4 not found -- is the Arctis dock plugged in?")
+    print("device: %s\n        %s\n" % (node, real))
+
+    fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+    try:
+        base = query(fd)
+        if base is None:
+            sys.exit("no response to the status query")
+
+        print("baseline:")
+        print("  bytes 0-31: %s" % show(base))
+        print("  byte[6]  = %d  -> headset %d%%" % (base[6], round(base[6] * 100 / 8)))
+        print("  byte[15] = 0x%02x -> headset status" % base[15])
+        print("\nwatching for %.0fs -- remove the spare battery from the dock, wait, "
+              "then put it back\n" % duration)
+
+        prev = base
+        end = time.monotonic() + duration
+        changes = 0
+        while time.monotonic() < end:
+            time.sleep(POLL_INTERVAL)
+            cur = query(fd)
+            if cur is None:
+                continue
+            diffs = [(i, prev[i], cur[i]) for i in range(WATCH_BYTES)
+                     if i < len(prev) and i < len(cur) and prev[i] != cur[i]]
+            if diffs:
+                changes += 1
+                stamp = time.strftime("%H:%M:%S")
+                for i, old, new in diffs:
+                    extra = ""
+                    if 0 <= new <= 8:
+                        extra = "  (as 0-8 scale: %d%%)" % round(new * 100 / 8)
+                    print("%s  byte[%2d]  0x%02x -> 0x%02x  (%d -> %d)%s"
+                          % (stamp, i, old, new, old, new, extra))
+                print("%s  full: %s\n" % (stamp, show(cur)))
+                prev = cur
+
+        print("done -- %d change event(s)" % changes)
+        if changes == 0:
+            print("no byte changed during the watch. Note the levels are 0-8 (12.5%% per\n"
+                  "step), so a slow charge or discharge can easily sit inside one step for\n"
+                  "much longer than this window.")
+    finally:
+        os.close(fd)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\ninterrupted")

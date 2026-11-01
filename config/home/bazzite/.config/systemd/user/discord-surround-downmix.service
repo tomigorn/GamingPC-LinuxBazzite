@@ -1,0 +1,11 @@
+[Unit]
+Description=Discord surround downmix filter (folds FC/sides/rears for Vesktop streams)
+After=pipewire.service
+BindsTo=pipewire.service
+
+[Service]
+ExecStart=/usr/bin/pipewire -c %h/.config/pipewire/standalone/discord-surround-downmix.conf
+Restart=on-failure
+
+[Install]
+WantedBy=pipewire.service

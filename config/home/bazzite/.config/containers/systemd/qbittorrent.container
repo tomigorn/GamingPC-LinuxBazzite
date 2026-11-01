@@ -1,0 +1,48 @@
+[Unit]
+Description=qBittorrent - network-locked inside the gluetun ProtonVPN namespace
+
+# Quadlet's Network= only gives us Requires=/After=gluetun.service, which is
+# not enough. If gluetun restarts, qBittorrent would be left holding a dead
+# network namespace, and podman cannot even remove gluetun while qBittorrent
+# is attached to it ("has dependent containers which must be removed first").
+# BindsTo stops qBittorrent whenever gluetun goes away; PartOf makes a gluetun
+# restart restart qBittorrent too, so it re-attaches to the new namespace.
+BindsTo=gluetun.service
+PartOf=gluetun.service
+
+[Container]
+ContainerName=qbittorrent
+Image=docker.io/linuxserver/qbittorrent:latest
+AutoUpdate=registry
+
+# The whole point of this setup: no network namespace of its own. qBittorrent
+# gets gluetun's, so the only interfaces it can ever see are lo and the Proton
+# tunnel. No VPN means no route out - not a firewall rule, an absence of one.
+# Quadlet turns this into a hard systemd dependency on gluetun.service too.
+Network=gluetun.container
+
+Volume=%h/.local/share/qbit-vpn/qbittorrent:/config:Z
+
+# No :Z here - ntfs3 cannot hold SELinux xattrs, so the label comes from the
+# mount's context= option in /etc/fstab instead. Relabelling would fail.
+Volume=/mnt/Secondary/qBittorrent:/downloads
+
+# Rootless podman maps host uid 1000 -> container uid 0, and the ntfs3 mount
+# (uid=1000,umask=022) only accepts writes from uid 1000. So running as
+# container root is what makes writes to /downloads land as bazzite.
+Environment=PUID=0
+Environment=PGID=0
+Environment=TZ=Europe/Zurich
+Environment=WEBUI_PORT=8080
+Environment=TORRENTING_PORT=6881
+
+[Service]
+# Proton's forwarded port is pushed by gluetun only on a new/renewed lease, so a
+# qBittorrent-only restart would otherwise come back on 6881.
+ExecStartPost=/usr/bin/bash %h/.local/share/qbit-vpn/reapply-port.sh
+Restart=always
+RestartSec=10
+
+# No [Install] section on purpose: this stack is started on demand (app menu
+# or launch.sh), not at boot. Re-add "[Install]\nWantedBy=default.target" and
+# run `systemctl --user daemon-reload` to go back to starting automatically.

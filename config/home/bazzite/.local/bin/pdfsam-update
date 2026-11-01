@@ -1,0 +1,74 @@
+#!/usr/bin/bash
+# Updates the tarball install of PDFsam Basic in ~/.local/opt to the latest
+# GitHub release. It is not on Flathub and the Homebrew cask is macOS-only, so
+# uupd cannot see it; update-summary calls this after uupd instead.
+#
+# Layout: ~/.local/opt/pdfsam-basic-<ver>-linux-x64, with ~/.local/opt/pdfsam
+# pointing at the current one. The previous version is kept for rollback.
+#
+# Prints nothing when up to date, "pdfsam <old> → <new>" on update, and exits
+# non-zero with a reason on stderr if anything fails. The symlink only moves
+# once the new release is downloaded, signature-checked and unpacked.
+
+set -euo pipefail
+
+OPT=$HOME/.local/opt
+LINK=$OPT/pdfsam
+# pinned key (Sober Lemur S.r.l.); a release signed by anything else is refused
+KEYRING=$HOME/.local/share/pdfsam/signing-key.gpg
+ICONS=$HOME/.local/share/icons/hicolor
+REPO=torakiki/pdfsam
+
+die() { echo "pdfsam-update: $*" >&2; exit 1; }
+
+current=$(readlink "$LINK" 2>/dev/null | sed -n 's/^pdfsam-basic-\(.*\)-linux-x64$/\1/p')
+[ -n "$current" ] || die "no install found at $LINK"
+
+latest=$(curl -fsSL --max-time 20 "https://api.github.com/repos/$REPO/releases/latest" \
+    | jq -r '.tag_name // empty') || die "could not reach GitHub"
+latest=${latest#v}
+[ -n "$latest" ] || die "GitHub returned no release tag"
+
+[ "$latest" = "$current" ] && exit 0
+# never downgrade if GitHub's "latest" points at an older tag
+[ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)" = "$latest" ] || exit 0
+
+name=pdfsam-basic-$latest-linux-x64
+url=https://github.com/$REPO/releases/download/v$latest/$name.tar.gz
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+curl -fsSL --max-time 600 -o "$TMP/$name.tar.gz" "$url" || die "download failed: $url"
+curl -fsSL --max-time 30 -o "$TMP/$name.tar.gz.asc" "$url.asc" || die "signature download failed"
+gpgv --keyring "$KEYRING" "$TMP/$name.tar.gz.asc" "$TMP/$name.tar.gz" >/dev/null 2>&1 \
+    || die "signature check FAILED for $name.tar.gz — not installed"
+
+# unpack beside the live install, then swap the link in one step
+rm -rf "$OPT/$name.partial"
+mkdir "$OPT/$name.partial"
+tar xzf "$TMP/$name.tar.gz" -C "$OPT/$name.partial" --strip-components=1
+[ -x "$OPT/$name.partial/bin/pdfsam.sh" ] || die "unexpected tarball layout"
+rm -rf "${OPT:?}/$name"
+mv "$OPT/$name.partial" "$OPT/$name"
+ln -sfn "$name" "$LINK.new" && mv -T "$LINK.new" "$LINK"
+
+# icons live inside the jar; refresh them in case the art changed
+jar=$OPT/$name/lib/pdfsam-basic-$latest.jar
+if [ -f "$jar" ] && unzip -q -o "$jar" 'images/basic/*' -d "$TMP/icons" 2>/dev/null; then
+    for f in "$TMP"/icons/images/basic/*.png; do
+        s=$(basename "$f" .png)
+        mkdir -p "$ICONS/$s/apps" && cp "$f" "$ICONS/$s/apps/pdfsam-basic.png"
+    done
+    # the user hicolor tree deliberately has no index.theme
+    gtk-update-icon-cache -f -q --ignore-theme-index "$ICONS" 2>/dev/null || true
+fi
+
+# keep the version we just left for rollback, drop anything older
+for d in "$OPT"/pdfsam-basic-*-linux-x64; do
+    case $(basename "$d") in
+        "$name"|"pdfsam-basic-$current-linux-x64") ;;
+        *) rm -rf "$d" ;;
+    esac
+done
+
+echo "pdfsam $current → $latest"

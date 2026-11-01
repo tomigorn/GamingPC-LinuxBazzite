@@ -1,0 +1,561 @@
+#!/usr/bin/env python3
+"""Collect battery levels for wireless peripherals and print them as JSON.
+
+Sources, in priority order:
+  1. OpenRazer sysfs   (/sys/bus/hid/devices/*/charge_level)  -- Razer, if the kmod exists
+  1b. Razer over hidraw (userspace OpenRazer protocol)        -- Razer, when it does not
+  2. HeadsetControl    (~/.local/bin/headsetcontrol -o json)  -- SteelSeries etc.
+  2b. Arctis base station (0x06 0xb0, byte 7)                 -- spare battery in the dock
+  3. UPower            (upower -e / -i)                       -- Bluetooth HID, anything else
+
+Devices listed in NO_TELEMETRY are reported with percent=null so the widget can
+show that they exist but cannot be queried.
+
+Output: {"devices": [{name, kind, percent, status, source}, ...], "errors": [...]}
+"""
+
+import fcntl
+import glob
+import grp
+import json
+import os
+import pwd
+import re
+import select
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+HEADSETCONTROL = os.path.join(HOME, ".local/bin/headsetcontrol")
+
+CACHE_PATH = os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"),
+    "peripheral-battery.json")
+CACHE_MAX_AGE = 12 * 3600  # forget a level nobody has confirmed in half a day
+
+# USB id -> (display name, kind). Devices with no known battery protocol on Linux.
+# Delete an entry here to stop showing it in the widget.
+NO_TELEMETRY = {
+    ("05ac", "024f"): ("Cidoo ABM 084", "keyboard"),
+}
+
+errors = []
+
+
+def run(cmd, timeout=8):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except Exception as exc:  # noqa: BLE001 - any failure is just a missing source
+        return 1, "", str(exc)
+
+
+def read(path):
+    with open(path) as fh:
+        return fh.read().strip()
+
+
+# --------------------------------------------------------------------------- 1
+def from_openrazer():
+    """OpenRazer's kernel driver exposes charge_level (0-255) and charge_status."""
+    found = []
+    for level_path in sorted(glob.glob("/sys/bus/hid/devices/*/charge_level")):
+        devdir = os.path.dirname(level_path)
+
+        driver = os.path.basename(os.path.realpath(os.path.join(devdir, "driver")))
+        kind = {"razermouse": "mouse",
+                "razerkbd": "keyboard",
+                "razeraccessory": "other"}.get(driver, "other")
+
+        name = "Razer device"
+        try:
+            name = read(os.path.join(devdir, "device_type"))
+        except OSError:
+            m = re.search(r"HID_NAME=(.*)", read(os.path.join(devdir, "uevent")))
+            if m:
+                name = m.group(1).replace("Razer Razer ", "Razer ")
+
+        try:
+            raw = int(read(level_path))
+        except PermissionError:
+            errors.append("no read access to %s -- your user must be in the 'plugdev' "
+                          "group, and the session must have picked it up (needs a "
+                          "reboot, not just a re-login)" % level_path)
+            found.append({"name": name, "kind": kind, "percent": None,
+                          "status": "no permission to read level", "source": "openrazer"})
+            continue
+        except (OSError, ValueError) as exc:
+            errors.append("%s: %s" % (level_path, exc))
+            continue
+
+        # OpenRazer reports 0 when a wireless device is asleep or out of range and the
+        # battery query goes unanswered. Reporting that as 0 % would trip a false low
+        # battery warning, so treat it as unknown -- a device at a true 0 % is off
+        # anyway, and a genuinely critical level still comes through as 1-4 %.
+        if raw == 0:
+            found.append({"name": name, "kind": kind, "percent": None,
+                          "status": "asleep", "source": "openrazer",
+                          "cacheable": True})
+            continue
+
+        status = "discharging"
+        try:
+            if read(os.path.join(devdir, "charge_status")) == "1":
+                status = "charging"
+        except OSError:
+            status = "unknown"
+
+        found.append({"name": name, "kind": kind,
+                      "percent": round(raw * 100 / 255),
+                      "status": status, "source": "openrazer"})
+    return found
+
+
+
+# --------------------------------------------------------------------------- 1b
+# Bazzite image 44.20260820 dropped the OpenRazer kmod, so charge_level vanished and the
+# mouse fell back to hid-generic. Ask the device directly instead, speaking OpenRazer's
+# userspace protocol over hidraw -- no kernel module involved, so this keeps working
+# whichever way a future image goes.
+#
+# 90-byte report: [0]=status [1]=transaction_id [2:4]=remaining [4]=protocol
+# [5]=data_size [6]=command_class [7]=command_id [8:88]=arguments
+# [88]=crc (XOR of bytes 2..87) [89]=reserved.  Exchanged as feature report 0.
+# Battery level is arguments[1] (index 9) on a 0-255 scale, same as the old sysfs value.
+RAZER_TRANSACTION_ID = 0x1F
+RAZER_STATUS_OK = 0x02
+RAZER_CMD_BATTERY = (0x07, 0x80)
+RAZER_CMD_CHARGING = (0x07, 0x84)
+
+
+def _hid_ioc(nr, length):
+    """HIDIOCSFEATURE / HIDIOCGFEATURE encode the buffer length into the ioctl number."""
+    return (3 << 30) | (length << 16) | (0x48 << 8) | nr
+
+
+def razer_query(node, command_class, command_id, data_size=0x02):
+    """Send one Razer feature report and return the 90-byte reply, or None if refused."""
+    report = bytearray(90)
+    report[1] = RAZER_TRANSACTION_ID
+    report[5] = data_size
+    report[6] = command_class
+    report[7] = command_id
+    crc = 0
+    for byte in report[2:88]:
+        crc ^= byte
+    report[88] = crc
+
+    fd = os.open(node, os.O_RDWR)
+    try:
+        out = bytearray(91)          # byte 0 is the report number
+        out[1:] = report
+        fcntl.ioctl(fd, _hid_ioc(0x06, 91), out, True)
+        time.sleep(0.06)             # the device needs a moment before the answer is ready
+        back = bytearray(91)
+        fcntl.ioctl(fd, _hid_ioc(0x07, 91), back, True)
+    finally:
+        os.close(fd)
+
+    reply = bytes(back[1:])
+    if reply[0] != RAZER_STATUS_OK or reply[6] != command_class or reply[7] != command_id:
+        return None                  # not a successful answer to the question we asked
+    return reply
+
+
+def razer_usb_devices():
+    """Razer USB devices -> their hidraw nodes, keyed by sysfs path of the USB device."""
+    devices = {}
+    for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        real = os.path.realpath(os.path.join(link, "device"))
+        if not re.search(r"/0003:1532:[0-9A-F]{4}\.[0-9A-F]+$", real, re.I):
+            continue
+        parts = real.rstrip("/").split("/")
+        usbdir = "/".join(parts[:-2])
+        devices.setdefault(usbdir, []).append("/dev/" + os.path.basename(link))
+    return devices
+
+
+def razer_kind(usbdir):
+    """Classify by what the interfaces actually declare, rather than by name."""
+    kinds = set()
+    for desc in glob.glob(os.path.join(usbdir, "*", "0003:*", "report_descriptor")):
+        try:
+            with open(desc, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        if b"\x05\x01\x09\x02" in data:      # Generic Desktop / Mouse
+            kinds.add("mouse")
+        if b"\x05\x01\x09\x06" in data:      # Generic Desktop / Keyboard
+            kinds.add("keyboard")
+    for kind in ("mouse", "keyboard"):
+        if kind in kinds:
+            return kind
+    return "other"
+
+
+def from_razer_hid():
+    found = []
+    for usbdir, nodes in sorted(razer_usb_devices().items()):
+        name = "Razer device"
+        try:
+            product = read(os.path.join(usbdir, "product"))
+            if product:
+                name = product if product.lower().startswith("razer") else "Razer " + product
+        except OSError:
+            pass
+
+        # Only the control interface answers; try them all rather than assume which.
+        reply = answered_on = None
+        for node in sorted(nodes):
+            try:
+                reply = razer_query(node, *RAZER_CMD_BATTERY)
+            except OSError:
+                reply = None
+            if reply is not None:
+                answered_on = node
+                break
+        if reply is None:
+            continue
+
+        raw = reply[9]
+        kind = razer_kind(usbdir)
+
+        # Same convention as the old sysfs value: 0 means the query went unanswered
+        # because the device is asleep, not that the battery is flat.
+        if raw == 0:
+            found.append({"name": name, "kind": kind, "percent": None,
+                          "status": "asleep", "source": "razer-hid", "cacheable": True})
+            continue
+
+        status = "discharging"
+        try:
+            charging = razer_query(answered_on, *RAZER_CMD_CHARGING)
+            if charging is not None and charging[9]:
+                status = "charging"
+        except OSError:
+            pass
+
+        found.append({"name": name, "kind": kind, "percent": round(raw * 100 / 255),
+                      "status": status, "source": "razer-hid"})
+    return found
+
+
+def from_razer():
+    """Use OpenRazer's sysfs when the kmod is present, else talk to the device directly."""
+    via_sysfs = from_openrazer()
+    return via_sysfs if via_sysfs else from_razer_hid()
+
+
+# --------------------------------------------------------------------------- 2
+def from_headsetcontrol():
+    if not os.access(HEADSETCONTROL, os.X_OK):
+        return []
+    rc, out, err = run([HEADSETCONTROL, "-o", "json"])
+    if not out.strip():
+        if rc != 0:
+            errors.append("headsetcontrol: %s" % (err.strip() or "rc=%d" % rc))
+        return []
+    try:
+        data = json.loads(out)
+    except ValueError as exc:
+        errors.append("headsetcontrol: unparseable output (%s)" % exc)
+        return []
+
+    found = []
+    for dev in data.get("devices", []):
+        batt = dev.get("battery") or {}
+        state = batt.get("status", "")
+        level = batt.get("level")
+        if state != "BATTERY_AVAILABLE" or not isinstance(level, int) or level < 0:
+            pretty = {"BATTERY_CHARGING": "charging",
+                      "BATTERY_UNAVAILABLE": "off / out of range",
+                      "BATTERY_HIDERROR": "read error",
+                      "BATTERY_TIMEOUT": "timeout"}.get(state, state.lower())
+            found.append({"name": dev.get("product", "headset"), "kind": "headset",
+                          "percent": None, "status": pretty or "unavailable",
+                          "source": "headsetcontrol", "cacheable": True})
+            continue
+        found.append({"name": dev.get("product", "headset"), "kind": "headset",
+                      "percent": level, "status": "discharging",
+                      "source": "headsetcontrol"})
+    return found
+
+
+# --------------------------------------------------------------------------- 2b
+# The Arctis Nova Pro Wireless base station answers 0x06 0xb0 with a 63-byte status
+# report. HeadsetControl reads only byte 6 (headset level) and byte 15 (headset status),
+# so the spare battery charging in the dock is invisible to it. Byte 7 carries that level
+# on the same 0-8 scale (x12.5%), 0 meaning the dock slot is empty -- established by
+# watching it while the cell was physically pulled and reinserted, and cross-checked
+# against the number on the base station's own display.
+ARCTIS_DOCK_BYTE = 7
+ARCTIS_STATUS_BYTE = 15
+
+
+def find_arctis_interface4():
+    """Resolve the base station's vendor interface by sysfs path; hidrawN numbering
+    shifts every time the USB devices re-enumerate."""
+    for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        real = os.path.realpath(os.path.join(link, "device"))
+        if "1038:12E0" not in real.upper():
+            continue
+        if real.rstrip("/").split("/")[-2].endswith(":1.4"):
+            return "/dev/" + os.path.basename(link)
+    return None
+
+
+def arctis_status_report(timeout=0.6):
+    """Send the read-only status query and return its response, or None."""
+    node = find_arctis_interface4()
+    if not node:
+        return None
+    try:
+        fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        while select.select([fd], [], [], 0)[0]:  # drop unsolicited reports first
+            try:
+                os.read(fd, 128)
+            except BlockingIOError:
+                break
+
+        os.write(fd, bytes([0x06, 0xB0]) + bytes(29))
+
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+                return None
+            buf = os.read(fd, 128)
+            if len(buf) > ARCTIS_STATUS_BYTE and buf[0] == 0x06 and buf[1] == 0xB0:
+                return buf
+    except OSError as exc:
+        errors.append("arctis dock query: %s" % exc)
+        return None
+    finally:
+        os.close(fd)
+
+
+def from_arctis_dock():
+    """Spare battery sitting in the base station's charging bay."""
+    try:
+        report = arctis_status_report()
+    except Exception as exc:  # noqa: BLE001 - never let a probe break the whole run
+        errors.append("arctis dock query: %s" % exc)
+        return []
+    if report is None:
+        return []
+
+    raw = report[ARCTIS_DOCK_BYTE]
+    if raw == 0:
+        return []  # no cell in the dock -- omit the row entirely rather than show "—"
+    raw = min(raw, 8)
+
+    percent = round(raw * 100 / 8)
+    # Sitting in the dock means it is on charge, so it must never be counted as a
+    # device "needing charging" -- these two statuses are what the widget treats as
+    # charging.
+    return [{"name": "Arctis spare battery (dock)", "kind": "other",
+             "percent": percent,
+             "status": "fully-charged" if percent >= 100 else "charging",
+             "source": "arctis-dock"}]
+
+
+# --------------------------------------------------------------------------- 3
+UPOWER_KINDS = {"mouse": "mouse", "keyboard": "keyboard", "headset": "headset",
+                "headphones": "headset", "gaming-input": "other",
+                "touchpad": "other", "pen": "other", "tablet": "other"}
+
+
+def from_upower():
+    rc, out, _ = run(["upower", "-e"])
+    if rc != 0:
+        return []
+
+    found = []
+    for path in out.split():
+        if path.endswith("/DisplayDevice"):
+            continue
+        _, info, _ = run(["upower", "-i", path])
+        if not info:
+            continue
+
+        kind = None
+        for line in info.splitlines():
+            m = re.match(r"^ {2}([a-z][a-z-]*)$", line)
+            if m:
+                kind = m.group(1)
+                break
+        if kind not in UPOWER_KINDS:
+            continue  # laptop battery, line-power, UPS ...
+
+        def field(key):
+            m = re.search(r"^\s*%s:\s*(.+)$" % re.escape(key), info, re.MULTILINE)
+            return m.group(1).strip() if m else ""
+
+        pct = field("percentage").rstrip("%")
+        try:
+            pct = round(float(pct))
+        except ValueError:
+            continue
+
+        name = field("model") or field("vendor") or kind
+        found.append({"name": name, "kind": UPOWER_KINDS[kind], "percent": pct,
+                      "status": field("state") or "unknown", "source": "upower"})
+    return found
+
+
+# --------------------------------------------------------------------------- 4
+def from_no_telemetry(existing):
+    """Report present-but-unqueryable USB devices, unless already covered."""
+    found = []
+    for usbdir in glob.glob("/sys/bus/usb/devices/*/idVendor"):
+        devdir = os.path.dirname(usbdir)
+        try:
+            vid = read(usbdir)
+            pid = read(os.path.join(devdir, "idProduct"))
+        except OSError:
+            continue
+        entry = NO_TELEMETRY.get((vid, pid))
+        if not entry:
+            continue
+        name, kind = entry
+        if any(d["kind"] == kind and d["percent"] is not None for d in existing):
+            continue  # e.g. same keyboard already reporting over Bluetooth
+        found.append({"name": name, "kind": kind, "percent": None,
+                      "status": "no battery reporting in wired/2.4 GHz mode",
+                      "source": "none"})
+    return found
+
+
+def load_cache():
+    try:
+        with open(CACHE_PATH) as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_cache(cache):
+    try:
+        os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+        tmp = CACHE_PATH + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(cache, fh)
+        os.replace(tmp, CACHE_PATH)  # atomic, so a killed run can't truncate the cache
+    except OSError as exc:
+        errors.append("could not write %s: %s" % (CACHE_PATH, exc))
+
+
+def apply_cache(devices):
+    """Reuse the last real reading for devices that are merely asleep or switched off.
+
+    A Razer mouse reports nothing once it dozes off, and the headset base station reports
+    nothing while the headset is powered down. Blanking those would make the tray icon
+    flip to an empty battery every few minutes, so show the last confirmed level marked
+    stale. Devices that can never be read (no permission, no protocol) stay blank -- they
+    do not set "cacheable".
+
+    `status` is left machine-readable; staleness travels in separate fields so the widget
+    can still tell that a device is charging.
+    """
+    cache = load_cache()
+    now = time.time()
+
+    for dev in devices:
+        cacheable = dev.pop("cacheable", False)
+        dev["stale"] = False
+        dev["since"] = ""
+
+        if dev["percent"] is not None:
+            cache[dev["name"]] = {"percent": dev["percent"], "ts": now}
+            continue
+        if not cacheable:
+            continue
+
+        entry = cache.get(dev["name"]) or {}
+        pct, ts = entry.get("percent"), entry.get("ts")
+        if not isinstance(pct, int) or not isinstance(ts, (int, float)):
+            continue
+        if now - ts > CACHE_MAX_AGE:
+            continue
+
+        dev["percent"] = pct
+        dev["stale"] = True
+        dev["since"] = time.strftime("%H:%M", time.localtime(ts))
+
+    save_cache(cache)
+
+
+def reexec_with_plugdev():
+    """Re-run ourselves under `sg plugdev` if that is what unlocks OpenRazer's sysfs.
+
+    OpenRazer's charge_level is root:plugdev. On Bazzite `user@1000.service` has
+    Linger=yes, so it keeps the group set it was started with at boot and a plain
+    logout/login will NOT pick up a newly added group -- only a reboot will. `sg`
+    re-reads the group database, so it works immediately. After a reboot the direct
+    read succeeds and this is skipped entirely.
+    """
+    if os.environ.get("PB_NO_SG"):
+        return  # already re-executed once; don't loop
+
+    paths = sorted(glob.glob("/sys/bus/hid/devices/*/charge_level"))
+    if not paths:
+        return
+    try:
+        read(paths[0])
+        return  # readable already
+    except PermissionError:
+        pass
+    except OSError:
+        return
+
+    try:
+        group = grp.getgrnam("plugdev")
+    except KeyError:
+        return
+    if group.gr_gid in os.getgroups():
+        return  # we have the group, so this is a different problem
+    if pwd.getpwuid(os.getuid()).pw_name not in group.gr_mem:
+        return  # not a member -- the group still needs to be added
+    if not shutil.which("sg"):
+        return
+
+    # If the re-exec itself fails, fall through and collect normally rather than dying
+    # with a traceback -- an empty stdout would leave the widget with no data at all.
+    try:
+        os.execvp("sg", ["sg", "plugdev", "-c",
+                         "PB_NO_SG=1 " + shlex.quote(os.path.abspath(sys.argv[0]))])
+    except OSError as exc:
+        errors.append("could not re-exec under 'sg plugdev': %s" % exc)
+
+
+def main():
+    reexec_with_plugdev()
+
+    devices = (from_razer() + from_headsetcontrol() + from_arctis_dock()
+               + from_upower())
+
+    # Drop UPower duplicates of devices a dedicated backend already reported.
+    seen = {(d["name"].lower(), d["kind"]) for d in devices if d["source"] != "upower"}
+    devices = [d for d in devices
+               if d["source"] != "upower" or (d["name"].lower(), d["kind"]) not in seen]
+
+    devices += from_no_telemetry(devices)
+    apply_cache(devices)
+
+    order = {"mouse": 0, "keyboard": 1, "headset": 2, "other": 3}
+    devices.sort(key=lambda d: (order.get(d["kind"], 9), d["name"]))
+
+    json.dump({"devices": devices, "errors": errors}, sys.stdout)
+    sys.stdout.write("\n")
+
+
+if __name__ == "__main__":
+    main()

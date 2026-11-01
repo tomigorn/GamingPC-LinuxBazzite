@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OneDrive Tray
+Comment=Sync status indicator for the OneDrive systemd user service
+Exec=/usr/bin/python3 /home/bazzite/.local/share/onedrive-tray/onedrive-tray.py
+Icon=folder-onedrive
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel

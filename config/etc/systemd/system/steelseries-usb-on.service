@@ -1,0 +1,16 @@
+[Unit]
+Description=Resolve & power on SteelSeries base station USB port (charging)
+Documentation=https://github.com/tomigorn/GamingPC-LinuxBazzite
+# USB devices are enumerated by udev; wait for it so the probe can see the dock.
+After=systemd-udevd.service
+Wants=systemd-udevd.service
+# Script lives in /usr/local/bin -> /var/usrlocal/bin on atomic Fedora.
+RequiresMountsFor=/var
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/steelseries-usb-on.sh
+
+[Install]
+WantedBy=multi-user.target

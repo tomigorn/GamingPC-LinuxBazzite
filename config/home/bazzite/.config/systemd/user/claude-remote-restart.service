@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly restart of Claude remote-control
+# Fixes silent OAuth-refresh stalls, slow memory growth, and picks up a
+# freshly self-updated claude binary.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user restart claude-remote.service

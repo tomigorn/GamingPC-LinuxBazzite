@@ -1,0 +1,11 @@
+# Logitech BRIO (046d:085e) — never let USB autosuspend touch it.
+#
+# The camera was observed parked in link state U3 (suspended) while refusing to
+# answer SET_ADDRESS, and its port reports state=suspended during normal idle.
+# A device that never suspends never has to resume, and resuming is the step
+# this camera fails. This is prevention; the power-cycle units are the cure.
+#
+# Note: USB3 link power management (U1/U2) is NOT set here. usb3_lpm_permit
+# lives on the SuperSpeed *port* directory, not on the usb_device, so it is not
+# reachable from a device-matched udev rule. camera-usb-reset.sh handles it.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="085e", TEST=="power/control", ATTR{power/control}="on"

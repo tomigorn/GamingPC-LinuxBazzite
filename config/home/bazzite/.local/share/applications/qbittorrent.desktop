@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=qBittorrent
+GenericName=BitTorrent Client
+Comment=Download torrents, tunnelled through ProtonVPN
+Exec=/home/bazzite/.local/share/qbit-vpn/launch.sh
+Icon=qbittorrent
+Terminal=false
+Categories=Network;FileTransfer;P2P;
+Keywords=torrent;bittorrent;download;p2p;magnet;
+StartupNotify=true
+StartupWMClass=brave-127.0.0.1__-Default
+Actions=Status;Stop;
+
+[Desktop Action Status]
+Name=Check VPN status
+Icon=network-vpn
+Exec=/home/bazzite/.local/share/qbit-vpn/launch.sh --status
+
+[Desktop Action Stop]
+Name=Stop qBittorrent and VPN
+Icon=process-stop
+Exec=/home/bazzite/.local/share/qbit-vpn/launch.sh --stop

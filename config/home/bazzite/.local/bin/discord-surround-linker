@@ -1,0 +1,92 @@
+#!/usr/bin/python3
+"""Keep surround apps fully audible in Vesktop screen-share streams.
+
+venmic links only FL/FR of a captured app into vencord-screen-share. For every
+app whose FL is captured and which also has surround ports, link those ports
+into discord_surround_downmix, and link the downmix into the capture. Links for
+apps that are no longer captured are removed again.
+"""
+import json
+import subprocess
+import time
+
+CAPTURE = "vencord-screen-share"
+DOWNMIX_IN = "discord_surround_downmix"
+DOWNMIX_OUT = "discord_surround_downmix_out"
+SURROUND = {"FC": ["FC"], "SL": ["SL"], "SR": ["SR"], "RL": ["RL"], "RR": ["RR"]}
+
+
+def graph():
+    objs = json.loads(subprocess.run(["pw-dump"], capture_output=True, text=True).stdout or "[]")
+    nodes, ports, links = {}, {}, set()
+    for o in objs:
+        t, info = o["type"], o.get("info") or {}
+        props = info.get("props") or {}
+        if t.endswith(":Node"):
+            nodes[o["id"]] = props.get("node.name")
+        elif t.endswith(":Port"):
+            ports[o["id"]] = (props.get("node.id"), props.get("port.direction"),
+                              props.get("audio.channel"), props.get("port.name"))
+        elif t.endswith(":Link"):
+            links.add((info["output-port-id"], info["input-port-id"]))
+    return nodes, ports, links
+
+
+def port(ports, node, direction, channel):
+    for pid, (nid, d, ch, _) in ports.items():
+        if nid == node and d == direction and ch == channel:
+            return pid
+    return None
+
+
+def link(a, b, links):
+    if a and b and (a, b) not in links:
+        subprocess.run(["pw-link", str(a), str(b)], capture_output=True)
+
+
+def unlink(a, b):
+    subprocess.run(["pw-link", "-d", str(a), str(b)], capture_output=True)
+
+
+def tick():
+    nodes, ports, links = graph()
+    by_name = {}
+    for nid, name in nodes.items():
+        by_name.setdefault(name, []).append(nid)
+    captures = by_name.get(CAPTURE, [])
+    dm_in = (by_name.get(DOWNMIX_IN) or [None])[0]
+    dm_out = (by_name.get(DOWNMIX_OUT) or [None])[0]
+    if dm_in is None or dm_out is None:
+        return
+
+    capture_in = {port(ports, c, "in", ch) for c in captures for ch in ("FL", "FR")}
+    captured = {ports[a][0] for a, b in links if b in capture_in and a in ports}
+    captured -= {dm_out}
+
+    wanted = set()
+    for app in captured:
+        for ch in SURROUND:
+            src, dst = port(ports, app, "out", ch), port(ports, dm_in, "in", ch)
+            if src and dst:
+                wanted.add((src, dst))
+    for a, b in wanted:
+        link(a, b, links)
+
+    # Drop surround feeds from apps the stream no longer captures.
+    dm_inputs = {pid for pid, p in ports.items() if p[0] == dm_in and p[1] == "in"}
+    for a, b in links:
+        if b in dm_inputs and (a, b) not in wanted:
+            unlink(a, b)
+
+    if wanted:
+        for c in captures:
+            for ch in ("FL", "FR"):
+                link(port(ports, dm_out, "out", ch), port(ports, c, "in", ch), links)
+
+
+while True:
+    try:
+        tick()
+    except Exception as e:  # keep running across PipeWire restarts
+        print(f"tick failed: {e}", flush=True)
+    time.sleep(1)

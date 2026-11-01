@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=qBittorrent
+Comment=Icon stub so KWin can resolve the Brave --app window; app_id comes from the URL and profile, not from --class
+Icon=qbittorrent
+Exec=/home/bazzite/.local/share/qbit-vpn/launch.sh
+NoDisplay=true

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <kcfgfile name=""/>
+    <group name="General">
+        <!-- Warn at or below this percentage. -->
+        <entry name="lowThreshold" type="Int">
+            <default>20</default>
+        </entry>
+        <!-- Devices already warned about, so each low episode notifies only once.
+             An entry is cleared once the device rises above lowThreshold + 5 or starts
+             charging, which re-arms the warning for the next time it runs down. -->
+        <entry name="notifiedDevices" type="StringList">
+            <default></default>
+        </entry>
+    </group>
+</kcfg>

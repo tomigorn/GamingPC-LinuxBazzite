@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PDFsam Basic
+GenericName=PDF Split and Merge
+Comment=Split, merge, rotate, extract and mix PDF files
+Exec=/home/bazzite/.local/opt/pdfsam/bin/pdfsam.sh %F
+Icon=pdfsam-basic
+Terminal=false
+Categories=Office;
+MimeType=application/pdf;
+Keywords=pdf;split;merge;rotate;extract;
+StartupWMClass=org.pdfsam.gui.PdfsamApp

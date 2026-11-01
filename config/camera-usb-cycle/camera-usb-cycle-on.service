@@ -1,0 +1,16 @@
+[Unit]
+Description=Cache Logitech BRIO USB socket location; power-cycle it if wedged
+Documentation=https://github.com/tomigorn/GamingPC-LinuxBazzite
+# USB devices are enumerated by udev; wait for it so the probe can see the camera.
+After=systemd-udevd.service
+Wants=systemd-udevd.service
+# Script and state live under /usr/local and /var/lib -> /var on atomic Fedora.
+RequiresMountsFor=/var
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/camera-usb-reset.sh --boot
+
+[Install]
+WantedBy=multi-user.target
