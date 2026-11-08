@@ -36,9 +36,17 @@ Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env
 
 Both are started together with `pipewire.service` (`pipewire.service.wants/`). Moving a running stream to another sink drops venmic's connections. Restart the stream in Discord.
 
+## Headset settings (base station)
+
+| Setting | Value | Note |
+|---|---|---|
+| Sidetone | **Medium** (trying out since 2026-11-08, before: off, then low) | hear own voice → less shouting; mixed in the headset, doesn't touch EQ/HRTF; also passes keyboard noise |
+
+Echo of typing/speakers while wearing the headset with speakers on: not sidetone, not the PC (no mic loopback). Likely Transparency mode (headset button: ANC → Transparency → Off).
+
 ## Speakers: keep-alive tone
 
-The Logitech speakers are on the base station's line-out, which only plays while the headset is off. Their auto-standby also kicks in during quiet playback. Windows used SoundKeeper; here it's `speaker-keepalive.service`, which runs [`speaker-keepalive`](../config/home/bazzite/.local/bin/speaker-keepalive) (started with `pipewire.service`):
+The Logitech Z337 speakers are on the base station's line-out, which only plays while the headset is off. Their auto-standby (about 2 h, not documented by Logitech) also kicks in during quiet playback. Windows used SoundKeeper; here it's `speaker-keepalive.service`, which runs [`speaker-keepalive`](../config/home/bazzite/.local/bin/speaker-keepalive) (started with `pipewire.service`):
 
 | Headset (base station status byte 15) | Tone |
 |---|---|
