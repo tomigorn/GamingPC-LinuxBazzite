@@ -40,7 +40,7 @@ Both are started together with `pipewire.service` (`pipewire.service.wants/`). M
 
 | Setting | Value | Note |
 |---|---|---|
-| Sidetone | **Off** | tried Low/Medium 2026-11-08: also passes keyboard typing, not wanted |
+| Sidetone | **Low** (2026-11-08) | Medium passed too much keyboard typing; Off → tendency to shout |
 
 Echo of typing/speakers while wearing the headset with speakers on: not sidetone, not the PC (no mic loopback). Likely Transparency mode (headset button: ANC → Transparency → Off).
 
