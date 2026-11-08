@@ -10,6 +10,7 @@ What's installed on `bazzite-prime` and what each game needs to run well. A game
 | Super Battle Golf | Steam | Steam default | — |
 | Level Devil | Steam | Steam default | — |
 | A Normal Train Game | Steam | Steam default | — |
+| Moon Sweepers | Steam | Steam default, DX11 | [Moon Sweepers](moon-sweepers.md) |
 | Harry Potter and the Half-Blood Prince | DVD, Lutris | umu-run | [Harry Potter 6 & 7](harry-potter-6-7.md) |
 | Harry Potter and the Deathly Hallows: Part 1 | DVD, Lutris | umu-run | [Harry Potter 6 & 7](harry-potter-6-7.md) |
 
@@ -19,7 +20,7 @@ What's installed on `bazzite-prime` and what each game needs to run well. A game
 |---|---|
 | Steam library | `~/.local/share/Steam/steamapps` (one library, on the system disk) |
 | Lutris games | prefixes in `~/Games/<slug>`, configs in `~/.local/share/lutris/games/*.yml` |
-| Extra Proton versions | GE-Proton 11-5/11-6/11-7, UMU-Proton 10.0-4, managed with **ProtonPlus** |
+| Extra Proton versions | GE-Proton 11-5/11-6/11-7/11-11, UMU-Proton 10.0-4, managed with **ProtonPlus** |
 | Per-game Proton in Steam | game → Properties → Compatibility (stored in `~/.local/share/Steam/config/config.vdf`, `CompatToolMapping`) |
 | Start-menu entries | `~/.local/share/applications/<game>.desktop`, icons in `~/.local/share/icons/hicolor/256x256/apps/` |
 
