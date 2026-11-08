@@ -35,3 +35,14 @@ Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env
 | `discord-surround-linker.service` | runs [`discord-surround-linker`](../config/home/bazzite/.local/bin/discord-surround-linker), which watches `pw-dump` every second and connects captured apps' surround channels through the downmix into `vencord-screen-share` |
 
 Both are started together with `pipewire.service` (`pipewire.service.wants/`). Moving a running stream to another sink drops venmic's connections. Restart the stream in Discord.
+
+## System sounds volume
+
+KDE system sounds (display detected, shutdown, …) play with role `Notification` straight to the Arctis sink, skipping the Sonar mix, so at 100% they are much louder than everything else. Set to 0.03 (about 30% on the slider) on 2026-11-08, stored in `~/.local/state/wireplumber/stream-properties`:
+
+```sh
+pw-metadata -n route-settings 0 'restore.stream.Output/Audio.media.role:Notification' '{ "mute": false, "volumes": [ 0.03, 0.03 ], "channels": [ "FL", "FR" ] }' 'Spa:String:JSON'
+canberra-gtk-play -i device-added   # test
+```
+
+Same knob in the GUI: System Settings → Sound → Applications → *Notification Sounds*.
