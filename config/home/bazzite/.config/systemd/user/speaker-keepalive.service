@@ -1,0 +1,13 @@
+[Unit]
+Description=Inaudible tone to the speakers while the Arctis headset is offline
+After=pipewire.service wireplumber.service
+PartOf=pipewire.service
+
+[Service]
+Environment=SPEAKER_KEEPALIVE_FREQ=20
+Environment=SPEAKER_KEEPALIVE_AMPLITUDE=0.02
+ExecStart=%h/.local/bin/speaker-keepalive
+Restart=on-failure
+
+[Install]
+WantedBy=pipewire.service

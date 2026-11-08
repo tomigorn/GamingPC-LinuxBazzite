@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Inaudible tone into the Arctis sink while the headset is offline, so the speakers on the base station's line-out never auto-standby."""
+
+import glob
+import json
+import math
+import os
+import select
+import signal
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+ARCTIS_STATUS_BYTE = 15
+HEADSET_OFFLINE = 0x01
+SINK_PREFIX = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless"
+RATE = 48000
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def should_play(report):
+    return report is not None and len(report) > ARCTIS_STATUS_BYTE and report[ARCTIS_STATUS_BYTE] == HEADSET_OFFLINE
+
+
+def find_arctis_interface4():
+    for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        real = os.path.realpath(os.path.join(link, "device"))
+        if "1038:12E0" in real.upper() and real.rstrip("/").split("/")[-2].endswith(":1.4"):
+            return "/dev/" + os.path.basename(link)
+    return None
+
+
+def arctis_status_report(timeout=0.6):
+    node = find_arctis_interface4()
+    if not node:
+        return None
+    try:
+        fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        while select.select([fd], [], [], 0)[0]:
+            try:
+                os.read(fd, 128)
+            except BlockingIOError:
+                break
+        os.write(fd, bytes([0x06, 0xB0]) + bytes(29))
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+                return None
+            buf = os.read(fd, 128)
+            if len(buf) > ARCTIS_STATUS_BYTE and buf[0] == 0x06 and buf[1] == 0xB0:
+                return buf
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def find_sink(dump_json):
+    try:
+        objects = json.loads(dump_json)
+    except ValueError:
+        return None
+    for obj in objects:
+        props = (obj.get("info") or {}).get("props") or {}
+        name = props.get("node.name", "")
+        if props.get("media.class") == "Audio/Sink" and name.startswith(SINK_PREFIX):
+            return name
+    return None
+
+
+class SineGenerator:
+    def __init__(self, freq, amplitude, rate=RATE):
+        self.step = 2 * math.pi * freq / rate
+        self.peak = amplitude * 32767
+        self.n = 0
+
+    def chunk(self, frames):
+        out = bytearray()
+        for i in range(self.n, self.n + frames):
+            v = round(self.peak * math.sin(self.step * i))
+            out += struct.pack("<hh", v, v)
+        self.n += frames
+        return bytes(out)
+
+
+class Player:
+    def __init__(self, sink, freq, amplitude):
+        self.stopped = threading.Event()
+        self.proc = subprocess.Popen(
+            ["pw-cat", "--playback", "--raw", "--target", sink, "--rate", str(RATE), "--channels", "2", "--format", "s16",
+             "-P", '{ node.name = speaker_keepalive media.name = "Speaker keep-alive" node.dont-reconnect = true }', "-"],
+            stdin=subprocess.PIPE)
+        self.gen = SineGenerator(freq, amplitude)
+        self.thread = threading.Thread(target=self.feed, daemon=True)
+        self.thread.start()
+
+    def feed(self):
+        try:
+            while not self.stopped.is_set():
+                self.proc.stdin.write(self.gen.chunk(RATE // 10))
+                self.proc.stdin.flush()
+        except (BrokenPipeError, ValueError, OSError):
+            pass
+
+    def alive(self):
+        return self.proc.poll() is None
+
+    def stop(self):
+        self.stopped.set()
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+        self.thread.join(timeout=1)
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+
+
+def main():
+    freq = float(os.environ.get("SPEAKER_KEEPALIVE_FREQ", "20"))
+    amplitude = float(os.environ.get("SPEAKER_KEEPALIVE_AMPLITUDE", "0.02"))
+    poll = float(os.environ.get("SPEAKER_KEEPALIVE_POLL", "5"))
+    player = None
+
+    def shutdown(*_):
+        if player:
+            player.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    while True:
+        play = should_play(arctis_status_report())
+        if player and not player.alive():
+            log("tone player exited")
+            player = None
+        if play and not player:
+            dump = subprocess.run(["pw-dump"], capture_output=True, text=True).stdout
+            sink = find_sink(dump)
+            if sink:
+                player = Player(sink, freq, amplitude)
+                log("headset offline: tone on (%g Hz, amplitude %g)" % (freq, amplitude))
+        elif not play and player:
+            player.stop()
+            player = None
+            log("headset not offline: tone off")
+        time.sleep(poll)
+
+
+if __name__ == "__main__":
+    main()

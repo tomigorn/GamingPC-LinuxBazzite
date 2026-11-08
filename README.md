@@ -10,7 +10,7 @@ How my gaming PC (`bazzite-prime`) is set up: Bazzite with KDE Plasma on Wayland
 | [Apps](docs/04-apps.md) | full inventory, PDFsam, Brave Teams PWA, Brave↔KeePassXC, Vesktop/Proton VPN fixes, FreeCAD (Fusion removed) |
 | [Desktop (KDE)](docs/05-desktop-kde.md) | tray widgets, favourites, fixing wrong/pixelated icons in Alt+Tab |
 | [USB peripherals](docs/06-usb-peripherals.md) | SteelSeries base station off at shutdown, BRIO camera fix, battery widget |
-| [Audio](docs/07-audio.md) | "Sonar" sinks with 7.1 HRTF, Discord streaming without losing dialogue |
+| [Audio](docs/07-audio.md) | "Sonar" sinks with 7.1 HRTF, Discord streaming without losing dialogue, speaker keep-alive tone |
 | [Storage and sync](docs/08-storage-sync.md) | NTFS data partition, SMB share from fastpi, OneDrive |
 | [qBittorrent behind VPN](docs/09-qbittorrent-vpn.md) | podman quadlets, how "no VPN, no torrenting" is enforced |
 | [Games](games/README.md) | installed games, Proton per game, MangoHud/vkBasalt, per-game tweaks |

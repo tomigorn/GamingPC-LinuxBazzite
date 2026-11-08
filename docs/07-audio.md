@@ -36,6 +36,20 @@ Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env
 
 Both are started together with `pipewire.service` (`pipewire.service.wants/`). Moving a running stream to another sink drops venmic's connections. Restart the stream in Discord.
 
+## Speakers: keep-alive tone
+
+The Logitech speakers are on the base station's line-out, which only plays while the headset is off. Their auto-standby also kicks in during quiet playback. Windows used SoundKeeper; here it's `speaker-keepalive.service`, which runs [`speaker-keepalive`](../config/home/bazzite/.local/bin/speaker-keepalive) (started with `pipewire.service`):
+
+| Headset (base station status byte 15) | Tone |
+|---|---|
+| offline (`0x01`) | on: 20 Hz sine, amplitude 0.02, straight into the Arctis sink (not through the Sonar EQs) |
+| online, charging, unknown, unreadable | off |
+
+- Polls every 5 s. Needs hidraw access, see [USB peripherals](06-usb-peripherals.md#battery-widget).
+- Shows up as stream "Speaker keep-alive" in the volume mixer.
+- Tune with `SPEAKER_KEEPALIVE_FREQ` / `SPEAKER_KEEPALIVE_AMPLITUDE` in the unit, then `systemctl --user restart speaker-keepalive`.
+- Log: `journalctl --user -u speaker-keepalive`. Tests: `python3 -m unittest tests/test_speaker_keepalive.py`.
+
 ## System sounds volume
 
 KDE system sounds (display detected, shutdown, …) play with role `Notification` straight to the Arctis sink, skipping the Sonar mix, so at 100% they are much louder than everything else. Set to 0.03 (about 30% on the slider) on 2026-11-08, stored in `~/.local/state/wireplumber/stream-properties`:
