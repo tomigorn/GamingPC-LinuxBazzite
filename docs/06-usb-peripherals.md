@@ -63,10 +63,11 @@ A custom tray widget (`org.kde.plasma.peripheralbattery`) shows battery levels f
 - Sleeping devices show the last known value, marked stale, for up to 12 h. Devices that can never be read show "—".
 - Tests: `<plasmoid>/tests/test_*.py`.
 
-**hidraw access** comes from the Bazzite image (`/usr/lib/udev/rules.d/92-viia.rules` makes every `/dev/hidraw*` `0666`), so nothing of ours is needed. If a future image drops that rule, the widget goes blank. You'll recognise it when `ls -l /dev/hidraw*` shows `0600 root`. Fix: put the same line into `/etc/udev/rules.d/99-hidraw.rules`:
+**hidraw access** comes from our own rule, [`/etc/udev/rules.d/70-hidraw-uaccess.rules`](../config/etc/udev/rules.d/70-hidraw-uaccess.rules): it gives the logged-in user access to every `/dev/hidraw*`. The image used to do this with `92-viia.rules` (`0666`) until a 2026-11 image dropped it, and the widget lost the headset. Symptom: `ls -l /dev/hidraw*` shows `0600 root` and `getfacl` shows no `user:bazzite`. The file must sort before `73-seat-late.rules`, or `uaccess` has no effect.
 
-```
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0666", TAG+="uaccess"
+```sh
+echo 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-hidraw-uaccess.rules
+sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=hidraw
 ```
 
 ### Per device
