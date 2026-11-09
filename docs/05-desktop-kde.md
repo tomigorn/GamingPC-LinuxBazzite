@@ -4,14 +4,15 @@ Two panels: containment 3 on `DP-1` and containment 55 on `DP-2`, each with its 
 
 ## Custom tray widgets
 
-Both are hand-written Plasma 6 plasmoids in `~/.local/share/plasma/plasmoids/` (copies in [`config/.../plasmoids/`](../config/home/bazzite/.local/share/plasma/plasmoids/)):
+All are hand-written Plasma 6 plasmoids in `~/.local/share/plasma/plasmoids/` (copies in [`config/.../plasmoids/`](../config/home/bazzite/.local/share/plasma/plasmoids/)):
 
 | Widget | What it shows |
 |---|---|
 | `org.kde.plasma.peripheralbattery` | Mouse / keyboard / headset / spare-battery levels, low-battery warning. See [USB peripherals](06-usb-peripherals.md#battery-widget) |
+| `org.kde.plasma.speakerkeepalive` | Speaker keep-alive tone on/off. See [Audio](07-audio.md#speakers-keep-alive-tone) |
 | `org.kde.plasma.qbittorrentvpn` | qBittorrent + VPN state, speeds, *Show WebUI* / *Stop*. See [qBittorrent behind VPN](09-qbittorrent-vpn.md) |
 
-Adding a widget to the tray of **both** panels means appending its id to `extraItems`, `knownItems` and `shownItems` of both systray applets (through `qdbus org.kde.plasmashell /PlasmaShell evaluateScript`), then restarting plasmashell. Being in the panel config is also what autostarts them; no autostart entry is needed.
+Adding a widget to the tray of **both** panels means appending its id to `extraItems`, `knownItems` and `shownItems` of both systray applets (the lists sit on the systray applet's own `General` group; through `qdbus-qt6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript`, plain `qdbus` doesn't exist on the host), then restarting plasmashell. Being in the panel config is also what autostarts them; no autostart entry is needed.
 
 Plasma **suppresses notification popups while a fullscreen window is active**, so on this gaming machine low-battery warnings often go straight to notification history.
 

@@ -1,0 +1,13 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Category": "System Information",
+        "Description": "Shows whether the speaker keep-alive tone is playing",
+        "Icon": "audio-speakers-symbolic",
+        "Id": "org.kde.plasma.speakerkeepalive",
+        "Name": "Speaker Keep-alive",
+        "Version": "1.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationAreaCategory": "Hardware"
+}
