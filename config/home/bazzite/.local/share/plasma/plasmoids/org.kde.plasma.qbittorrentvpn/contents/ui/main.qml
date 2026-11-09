@@ -286,8 +286,8 @@ PlasmoidItem {
     }
 
     Timer {
-        interval: root.expanded ? 2000
-                : (root.vpnState === "connecting" || root.stopping ? 2000 : 6000)
+        interval: root.expanded || root.vpnState === "connecting" || root.stopping ? 2000
+                : root.live ? 6000 : 30000
         running: true
         repeat: true
         triggeredOnStart: true
@@ -314,7 +314,7 @@ PlasmoidItem {
         PlasmaCore.Action {
             text: i18nc("@action", "Add magnet from clipboard")
             icon.name: "edit-paste"
-            enabled: root.running
+            enabled: root.qbit === "active"
             onTriggered: root.doMagnet()
         },
         PlasmaCore.Action {
@@ -713,7 +713,7 @@ PlasmoidItem {
                     icon.name: "edit-paste"
                     display: QQC2.AbstractButton.IconOnly
                     text: i18n("Add magnet from clipboard")
-                    enabled: root.running
+                    enabled: root.qbit === "active"
                     QQC2.ToolTip.text: text
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay

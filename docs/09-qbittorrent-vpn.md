@@ -26,6 +26,7 @@ Test it on purpose: `~/.local/share/qbit-vpn/verify.sh --killswitch`.
 
 - Start-menu entry **qBittorrent** (`launch.sh`): starts the stack, waits for it, opens the WebUI as a Brave app window. Right-click actions: *Check VPN status*, *Stop qBittorrent and VPN*.
 - Tray widget `org.kde.plasma.qbittorrentvpn` + `~/.local/bin/qbit-vpn-status`: state, exit IP, speeds, torrent counts. It says "behind ProtonVPN" only if gluetun is healthy **and** qBittorrent is up **and** a public IP was found through the tunnel.
+  - Polls every 30 s while nothing runs, 6 s while the stack is up, 2 s while connecting or with the panel open. The real-IP lookup (ipinfo.io, fallback ipify) is cached 15 min and, after a failure, not retried for 60 s.
 - Starts **on demand only**, not at boot. Stop with `systemctl --user stop gluetun.service`.
 - Change server country: edit `SERVER_COUNTRIES` in `proton.env`, then `systemctl --user restart gluetun.service`.
 

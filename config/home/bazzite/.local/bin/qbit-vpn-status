@@ -32,9 +32,11 @@ fi
 # this, the traffic is not tunnelled. Cached for 15 min so the 6s poll does not
 # hammer an external service; one request per quarter hour.
 REALIP_CACHE="$HOME/.cache/qbit-vpn-realip"
+REALIP_FAIL="$REALIP_CACHE.failed"
+age() { echo $(( $(date +%s) - $(stat -c %Y "$1" 2>/dev/null || echo 0) )); }
 realip=""
-if [ -s "$REALIP_CACHE" ] \
-   && [ "$(( $(date +%s) - $(stat -c %Y "$REALIP_CACHE" 2>/dev/null || echo 0) ))" -lt 900 ]; then
+if { [ -s "$REALIP_CACHE" ] && [ "$(age "$REALIP_CACHE")" -lt 900 ]; } \
+   || [ "$(age "$REALIP_FAIL")" -lt 60 ]; then
   realip=$(cat "$REALIP_CACHE" 2>/dev/null | tr -dc '0-9a-fA-F.:')
 else
   realip=$(curl -s --max-time 4 https://ipinfo.io/ip 2>/dev/null | tr -dc '0-9a-fA-F.:')
@@ -42,7 +44,10 @@ else
   if [ -n "$realip" ]; then
     mkdir -p "$(dirname "$REALIP_CACHE")"
     printf '%s' "$realip" > "$REALIP_CACHE"
+    rm -f "$REALIP_FAIL"
   else
+    mkdir -p "$(dirname "$REALIP_FAIL")"
+    : > "$REALIP_FAIL"
     # Network down: fall back to the last known value rather than reporting "" ,
     # which the widget would otherwise read as "cannot compare".
     realip=$(cat "$REALIP_CACHE" 2>/dev/null | tr -dc '0-9a-fA-F.:')
