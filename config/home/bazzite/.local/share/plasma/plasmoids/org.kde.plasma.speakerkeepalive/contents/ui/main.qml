@@ -1,15 +1,16 @@
 import QtQuick
 import QtQuick.Layouts
+import Qt.labs.folderlistmodel
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.kirigami as Kirigami
-import org.kde.plasma.plasma5support as Plasma5Support
 
 PlasmoidItem {
     id: root
 
-    readonly property string reader: "cat \"$XDG_RUNTIME_DIR/speaker-keepalive\" 2>/dev/null || echo stopped"
+    readonly property string runtimeDir: "/run/user/1000"
+    readonly property string prefix: "speaker-keepalive."
     property string state: ""
 
     readonly property var states: ({
@@ -21,26 +22,29 @@ PlasmoidItem {
     })
     readonly property var current: states[state] || { icon: "audio-speakers-symbolic", text: i18n("Reading…") }
 
-    Plasma5Support.DataSource {
-        id: source
-        engine: "executable"
-        connectedSources: []
-        onNewData: function (cmd, data) {
-            disconnectSource(cmd);
-            root.state = (data["stdout"] || "").trim();
-        }
-        function refresh() {
-            disconnectSource(root.reader);
-            connectSource(root.reader);
-        }
+    FolderListModel {
+        id: files
+        folder: "file://" + root.runtimeDir
+        nameFilters: Object.keys(root.states).map(function (s) { return root.prefix + s; })
+        showDirs: false
+        onStatusChanged: root.sync()
+        onCountChanged: root.sync()
     }
 
-    Timer {
-        interval: 1000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: source.refresh()
+    Connections {
+        target: files
+        function onRowsInserted() { root.sync(); }
+        function onRowsRemoved() { root.sync(); }
+        function onModelReset() { root.sync(); }
+        function onDataChanged() { root.sync(); }
+    }
+
+    function sync() {
+        if (files.status !== FolderListModel.Ready)
+            return;
+        root.state = files.count > 0
+            ? String(files.get(0, "fileName")).substring(root.prefix.length)
+            : "stopped";
     }
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus

@@ -63,7 +63,7 @@ The Logitech Z337 speakers are on the base station's line-out, which only plays 
 
 - Reacts within about a second: the base station sends a HID report when the headset switches, plus a fallback check every 10 s. ~0 % CPU (one second of tone is precomputed and looped, so whole-number Hz only). Needs hidraw access, see [USB peripherals](06-usb-peripherals.md#battery-widget).
 - Shows up as stream "Speaker keep-alive" in the volume mixer.
-- Tray icon (widget `org.kde.plasma.speakerkeepalive`): speaker = tone on, headset = tone off, warning = service stopped or base station unreadable. Reads the state file `$XDG_RUNTIME_DIR/speaker-keepalive` every second.
+- Tray icon (widget `org.kde.plasma.speakerkeepalive`): speaker = tone on, headset = tone off, warning = service stopped or base station unreadable. The state is the file name `/run/user/1000/speaker-keepalive.<state>`; the widget watches the folder (inotify), so no polling and no spawned processes.
 - Tune with `SPEAKER_KEEPALIVE_FREQ` / `SPEAKER_KEEPALIVE_AMPLITUDE` in the unit, then `systemctl --user restart speaker-keepalive`.
 - Log: `journalctl --user -u speaker-keepalive`. Tests: `python3 -m unittest tests/test_speaker_keepalive.py`.
 

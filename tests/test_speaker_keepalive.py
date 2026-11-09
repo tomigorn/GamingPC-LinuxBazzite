@@ -51,13 +51,22 @@ class State(unittest.TestCase):
     def test_unreadable(self):
         self.assertEqual(sk.state_for(None), "unreadable")
 
-    def test_write_state_replaces_file(self):
+    def test_state_is_in_file_name(self):
         import tempfile
-        path = os.path.join(tempfile.mkdtemp(), "state")
-        sk.write_state(path, "tone")
-        sk.write_state(path, "headset")
-        with open(path) as f:
-            self.assertEqual(f.read(), "headset\n")
+        d = tempfile.mkdtemp()
+        base = os.path.join(d, "speaker-keepalive")
+        sk.write_state(base, "tone")
+        sk.write_state(base, "headset")
+        self.assertEqual(os.listdir(d), ["speaker-keepalive.headset"])
+
+    def test_clear_state_removes_all(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        base = os.path.join(d, "speaker-keepalive")
+        sk.write_state(base, "tone")
+        open(base, "w").close()
+        sk.clear_state(base)
+        self.assertEqual(os.listdir(d), [])
 
 
 class WaitForEvent(unittest.TestCase):

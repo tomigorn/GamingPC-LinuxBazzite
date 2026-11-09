@@ -33,11 +33,28 @@ def state_for(report):
     return "headset" if report is not None else "unreadable"
 
 
-def write_state(path, state):
-    tmp = path + ".tmp"
+STATES = ("tone", "headset", "unreadable", "error")
+
+
+def write_state(base, state):
+    tmp = base + ".tmp"
     with open(tmp, "w") as f:
         f.write(state + "\n")
-    os.replace(tmp, path)
+    os.replace(tmp, base + "." + state)
+    for other in STATES:
+        if other != state:
+            try:
+                os.remove(base + "." + other)
+            except FileNotFoundError:
+                pass
+
+
+def clear_state(base):
+    for name in (base,) + tuple(base + "." + s for s in STATES):
+        try:
+            os.remove(name)
+        except OSError:
+            pass
 
 
 def find_arctis_interface4():
@@ -188,12 +205,10 @@ def main():
     def shutdown(*_):
         if player:
             player.stop()
-        try:
-            os.remove(state_path)
-        except OSError:
-            pass
+        clear_state(state_path)
         sys.exit(0)
 
+    clear_state(state_path)
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
