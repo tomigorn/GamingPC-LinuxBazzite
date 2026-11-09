@@ -1,0 +1,193 @@
+#!/usr/bin/python3
+"""Security scan for this desktop: ClamAV on new files, Trivy on the podman images, Lynis weekly. Prints a short summary, writes a full report, notifies on a virus or a CRITICAL CVE."""
+import collections
+import glob
+import json
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+BREW = "/home/linuxbrew/.linuxbrew/bin"
+STATE = os.path.join(HOME, ".local/state/security-scan")
+QUADLETS = os.path.join(HOME, ".config/containers/systemd")
+CLAM_DIRS = [os.path.join(HOME, d) for d in ("Downloads", "Desktop", "Documents", "OneDrive")]
+FIRST_RUN_DIRS = [os.path.join(HOME, "Downloads")]
+LYNIS_DAYS = 7
+
+
+def trivy_counts(text):
+    c = collections.Counter(v.get("Severity") for r in json.loads(text).get("Results") or [] for v in r.get("Vulnerabilities") or [])
+    return {"CRITICAL": c["CRITICAL"], "HIGH": c["HIGH"]}
+
+
+def trivy_criticals(text):
+    return sorted({"%s (%s)" % (v["VulnerabilityID"], v.get("PkgName", "?"))
+                   for r in json.loads(text).get("Results") or [] for v in r.get("Vulnerabilities") or [] if v.get("Severity") == "CRITICAL"})
+
+
+def clam_finds(output):
+    return [l for l in output.splitlines() if l.endswith(" FOUND")]
+
+
+def lynis_summary(dat):
+    index, warnings = None, []
+    for line in dat.splitlines():
+        if line.startswith("hardening_index="):
+            index = int(line.split("=", 1)[1])
+        elif line.startswith("warning[]="):
+            f = line.split("=", 1)[1].split("|")
+            warnings.append("%s %s" % (f[0], f[1]))
+    return index, warnings
+
+
+def quadlet_images(texts):
+    return sorted({l.split("=", 1)[1].strip() for t in texts for l in t.splitlines() if l.startswith("Image=")})
+
+
+def should_alert(res):
+    return bool(res.get("clam")) or any(c["CRITICAL"] for c in res.get("images", {}).values())
+
+
+def due(last, now, days):
+    return last is None or now - last >= days * 86400
+
+
+def new_files(dirs, since, ctime=True):
+    out = []
+    for d in dirs:
+        for root, _, files in os.walk(d):
+            for f in files:
+                p = os.path.join(root, f)
+                try:
+                    st = os.lstat(p)
+                except OSError:
+                    continue
+                if (st.st_ctime if ctime else st.st_mtime) > since and os.path.isfile(p) and not os.path.islink(p):
+                    out.append(p)
+    return out
+
+
+def summary_lines(res):
+    lines = []
+    n = res["clam_count"]
+    if res["clam"]:
+        lines.append("ClamAV     %d files, %d FOUND: %s" % (n, len(res["clam"]), "; ".join(res["clam"])))
+    else:
+        lines.append("ClamAV     %d files, nothing found" % n)
+    for img, c in res["images"].items():
+        lines.append("Trivy      %s: %d critical, %d high" % (img.rsplit("/", 1)[-1], c["CRITICAL"], c["HIGH"]))
+    if res.get("lynis") is None:
+        lines.append("Lynis      not due (weekly)")
+    else:
+        idx, w = res["lynis"]
+        lines.append("Lynis      hardening %s, %d warning%s" % (idx, len(w), "" if len(w) == 1 else "s"))
+    for f in res["failures"]:
+        lines.append("Failed     %s" % f)
+    return lines
+
+
+def mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def touch(path, when):
+    with open(path, "a"):
+        pass
+    os.utime(path, (when, when))
+
+
+def run_clam(res, report):
+    stamp = os.path.join(STATE, "clam.stamp")
+    since = mtime(stamp)
+    start = time.time()
+    files = new_files(FIRST_RUN_DIRS, 0) if since is None else new_files(CLAM_DIRS, since)
+    res["clam_count"] = len(files)
+    if subprocess.run([BREW + "/freshclam", "--quiet"], capture_output=True).returncode != 0:
+        res["failures"].append("freshclam: signature update failed, scanned with the old signatures")
+    if files:
+        listing = os.path.join(STATE, "clam.list")
+        with open(listing, "w") as f:
+            f.write("\n".join(files) + "\n")
+        p = subprocess.run([BREW + "/clamscan", "--no-summary", "--infected", "--file-list=" + listing], capture_output=True, text=True)
+        if p.returncode == 2:
+            res["failures"].append("clamscan: " + (p.stderr.strip().splitlines() or ["error"])[-1])
+            return
+        res["clam"] = clam_finds(p.stdout)
+    touch(stamp, start)
+    report.append("ClamAV: %d files scanned, %d found" % (len(files), len(res["clam"])))
+    report.extend("  " + l for l in res["clam"])
+
+
+def run_trivy(res, report):
+    texts = []
+    for f in glob.glob(os.path.join(QUADLETS, "*.container")):
+        with open(f) as fh:
+            texts.append(fh.read())
+    env = dict(os.environ, DOCKER_HOST="unix://%s/podman/podman.sock" % os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid()))
+    for img in quadlet_images(texts):
+        if subprocess.run(["podman", "image", "exists", img]).returncode != 0:
+            report.append("Trivy %s: not pulled, skipped" % img)
+            continue
+        p = subprocess.run([BREW + "/trivy", "image", "--quiet", "--image-src", "podman", "--scanners", "vuln", "--severity", "HIGH,CRITICAL",
+                            "--format", "json", img], capture_output=True, text=True, env=env)
+        if p.returncode != 0:
+            res["failures"].append("trivy %s: %s" % (img, (p.stderr.strip().splitlines() or ["error"])[-1]))
+            continue
+        res["images"][img] = trivy_counts(p.stdout)
+        report.append("Trivy %s: %d critical, %d high" % (img, res["images"][img]["CRITICAL"], res["images"][img]["HIGH"]))
+        report.extend("  CRITICAL " + c for c in trivy_criticals(p.stdout))
+
+
+def run_lynis(res, report):
+    stamp = os.path.join(STATE, "lynis.stamp")
+    if not due(mtime(stamp), time.time(), LYNIS_DAYS):
+        return
+    dat = os.path.join(STATE, "lynis-report.dat")
+    p = subprocess.run([BREW + "/lynis", "audit", "system", "--quick", "--quiet", "--no-colors",
+                        "--logfile", os.path.join(STATE, "lynis.log"), "--report-file", dat], capture_output=True, text=True)
+    if p.returncode != 0 or not os.path.exists(dat):
+        res["failures"].append("lynis: exit %d" % p.returncode)
+        return
+    with open(dat) as f:
+        res["lynis"] = lynis_summary(f.read())
+    touch(stamp, time.time())
+    report.append("Lynis: hardening index %s (full report: %s)" % (res["lynis"][0], dat))
+    report.extend("  WARNING " + w for w in res["lynis"][1])
+
+
+def main():
+    if os.path.exists("/run/.containerenv"):
+        os.execvp("distrobox-host-exec", ["distrobox-host-exec", os.path.abspath(sys.argv[0])] + sys.argv[1:])
+    os.makedirs(STATE, exist_ok=True)
+    res = {"clam": [], "clam_count": 0, "images": {}, "lynis": None, "failures": []}
+    report = ["Security scan %s" % time.strftime("%Y-%m-%d %H:%M"), ""]
+    for step in (run_clam, run_trivy, run_lynis):
+        try:
+            step(res, report)
+        except Exception as e:
+            res["failures"].append("%s: %s" % (step.__name__[4:], e))
+    lines = summary_lines(res)
+    report += [""] + lines
+    path = os.path.join(STATE, "report-%s.txt" % time.strftime("%Y-%m-%d"))
+    with open(path, "w") as f:
+        f.write("\n".join(report) + "\n")
+    latest = os.path.join(STATE, "latest.txt")
+    if os.path.lexists(latest):
+        os.remove(latest)
+    os.symlink(os.path.basename(path), latest)
+    if should_alert(res):
+        subprocess.run(["notify-send", "-a", "Security scan", "-i", "security-low", "-u", "normal",
+                        "Security scan found something",
+                        "\n".join(res["clam"] + ["%s: %d critical CVEs" % (i.rsplit("/", 1)[-1], c["CRITICAL"]) for i, c in res["images"].items() if c["CRITICAL"]])
+                        + "\nReport: " + path])
+    print("\n".join(lines))
+    return 1 if res["failures"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
