@@ -36,6 +36,14 @@ Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env
 
 Both are started together with `pipewire.service` (`pipewire.service.wants/`). Moving a running stream to another sink drops venmic's connections. Restart the stream in Discord.
 
+## Mic: Easy Effects
+
+Easy Effects (Flatpak, autostarts) processes **only the mic**; outputs go through the Sonar sinks instead. Input preset *SteelSeries Arctis Nova Pro Wireless* ([copy](../config/home/bazzite/.var/app/com.github.wwmm.easyeffects/data/easyeffects/input/)):
+
+DeepFilterNet → gate → EQ → de-esser → compressor → exciter
+
+DeepFilterNet (neural noise removal) is the heaviest plugin, ~3 % CPU on average while the mic is used. Kept on purpose (2026-11-09) for its noise removal; the lighter RNNoise model is installed if that ever changes.
+
 ## Headset settings (base station)
 
 | Setting | Value | Note |
