@@ -124,4 +124,10 @@ $ git log --format='%h %G? %s' -3
 
 Claude Code runs as the VS Code extension inside the `vscode` distrobox, plus the CLI in `~/.local/bin/claude`. Its instructions for this machine live in `~/.claude/CLAUDE.md`, and what it has learned about the setup lives in `~/.claude/projects/-home-bazzite/memory/`.
 
-`claude-remote.service` (user unit, copy in [`config/home/bazzite/.config/systemd/user/`](../config/home/bazzite/.config/systemd/user/)) keeps a `claude remote-control` session running so the machine can be reached from the Claude app, and `claude-remote-restart.timer` restarts it periodically.
+`claude-remote.service` (user unit, copy in [`config/home/bazzite/.config/systemd/user/`](../config/home/bazzite/.config/systemd/user/)) runs a `claude remote-control` session so the machine can be reached from the Claude app. **Not autostarted** (disabled 2026-11-09, ~300 MB idle); start by hand when needed:
+
+```sh
+systemctl --user start claude-remote    # stop: systemctl --user stop claude-remote
+```
+
+`claude-remote-restart.timer` (nightly restart) is disabled too; only useful when the service runs for days.
