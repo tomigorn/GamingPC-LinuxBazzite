@@ -10,8 +10,16 @@ Everything is updated with one click in **Bazzite Updater**, from the start menu
 | Flatpaks, system and user | `uupd`, steps *Flatpak* and *User Flatpak* |
 | Homebrew (`onedrive-cli`, `bbrew`) | `uupd`, step *Brew* |
 | Distrobox containers (`vscode`) | `uupd`, step *Distrobox* (`dnf upgrade` inside) |
-| PDFsam Basic (tarball install) | `~/.local/bin/pdfsam-update`, step *Apps*, see below |
+| PDFsam Basic, HeadsetControl (tarball/source installs) | `pdfsam-update`, `headsetcontrol-update` via [`update-extras`](../config/home/bazzite/.local/bin/update-extras), see below |
+| Podman images of the quadlets (qBittorrent, gluetun) | `update-extras`: `podman pull` + prune dangling. `podman auto-update` would only touch *running* containers, and this stack runs on demand |
 | Firmware | **not** updated, only reported. Run `fwupdmgr update` yourself |
+
+Two paths run all of it:
+
+| Path | When | Runs |
+|---|---|---|
+| Automatic | `uupd.timer` daily 04:00 (catches up after boot), then `update-extras.timer` 04:30 (same) | uupd, then [`update-extras.service`](../config/home/bazzite/.config/systemd/user/update-extras.service): `update-extras` + `security-scan`, at idle CPU/IO priority |
+| Manual | Bazzite Updater button | `update-summary`: uupd, `update-extras`, `security-scan`, one summary |
 
 ## The update summary
 
@@ -29,8 +37,8 @@ systemRollbackCommand=bazzite-rollback-helper rollback -y
 
 1. Snapshots versions before the update (brew, flatpak, image, every distrobox, and the tarball apps).
 2. Starts `uupd-manual.service` and follows its journal. With no terminal attached (that is, inside the GUI), it passes uupd's JSON through unchanged, so the updater's progress bars still work.
-3. Runs the extra updaters that uupd doesn't know about (`pdfsam-update`).
-4. Diffs the snapshots and prints the summary: per category either *nothing needed updating* or `name old → new`, plus whether a reboot is needed and whether firmware updates are available.
+3. Runs `update-extras` (tarball apps, container images).
+4. Diffs the snapshots and prints the summary: per category (incl. *Containers*) either *nothing needed updating* or `name old → new`, plus whether a reboot is needed, firmware updates, and the security scan result.
 
 It also runs in a normal terminal (`update-summary`), where it shows a live progress view instead.
 
@@ -55,7 +63,19 @@ Rules for such an updater (see [`pdfsam-update`](../config/home/bazzite/.local/b
 - Keep the previous version for rollback and delete older ones.
 - Print nothing when up to date, `name old → new` on update, and to stderr plus a non-zero exit on failure (the summary then shows it under the failure list).
 
-Currently: **PDFsam Basic**, see [Apps](04-apps.md#pdfsam-basic).
+Currently: **PDFsam Basic**, see [Apps](04-apps.md#pdfsam-basic), and **HeadsetControl** ([`headsetcontrol-update`](../config/home/bazzite/.local/bin/headsetcontrol-update)): verifies the release tarball's `.asc` against the pinned key in `~/.local/share/headsetcontrol/signing-key.gpg` (Denis Arnst, primary `77BE B7E2 32CF 1E51 5477 7D4D D586 6C58 9401 97BF`, release subkey `893E 9C96 …C92C F077`, expires 2028-07-22: re-pin by hand then), builds inside the `vscode` box (needs `cmake gcc gcc-c++ hidapi-devel` there), checks the new binary runs on the host, then swaps `~/.local/opt/headsetcontrol`. The first run migrates the old hand-built binary into `~/.local/opt/headsetcontrol-0.0.0-e529bc1` as rollback.
+
+## Security scans
+
+[`security-scan`](../config/home/bazzite/.local/bin/security-scan), run by both update paths (~1 min, idle priority). Tools from Homebrew: `clamav` (no `clamd` daemon, ~1 GB RAM saved; `freshclam.conf` in the brew prefix), `trivy`, `lynis`.
+
+| Scanner | What | Notifies |
+|---|---|---|
+| ClamAV | files new/changed since the last scan in Downloads, Desktop, Documents, OneDrive (first run: all of Downloads) | any find |
+| Trivy | the quadlet images, HIGH + CRITICAL CVEs | CRITICAL |
+| Lynis | system audit as user, weekly | never (report only) |
+
+Report: `~/.local/state/security-scan/latest.txt`. Run by hand: `security-scan`. Tests: `tests/test_security_scan.py`.
 
 ## btrfs deduplication (bees)
 

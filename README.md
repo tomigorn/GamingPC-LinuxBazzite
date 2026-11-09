@@ -6,7 +6,7 @@ How my gaming PC (`bazzite-prime`) is set up: Bazzite with KDE Plasma on Wayland
 |---|---|
 | [System basics](docs/01-system.md) | hostname, GRUB/Windows first, what survives updates, layered packages, keyboard Fn keys |
 | [Dev environment](docs/02-dev-environment.md) | VS Code in the `vscode` distrobox, git + GitHub SSH key + commit signing, Claude Code |
-| [Updates](docs/03-updates.md) | Bazzite Updater with update summary, apps outside package managers, bees limits |
+| [Updates](docs/03-updates.md) | Bazzite Updater with update summary, container images, security scans, apps outside package managers, bees limits |
 | [Apps](docs/04-apps.md) | full inventory, PDFsam, Brave Teams PWA, Brave↔KeePassXC, Vesktop/Proton VPN fixes, FreeCAD (Fusion removed) |
 | [Desktop (KDE)](docs/05-desktop-kde.md) | tray widgets, favourites, fixing wrong/pixelated icons in Alt+Tab |
 | [USB peripherals](docs/06-usb-peripherals.md) | SteelSeries base station off at shutdown, BRIO camera fix, battery widget |

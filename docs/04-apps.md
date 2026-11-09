@@ -74,7 +74,7 @@ Everything else in `brew list` is a dependency of these.
 | App | Where |
 |---|---|
 | PDFsam Basic | `~/.local/opt/pdfsam`, see below |
-| headsetcontrol | `~/.local/bin/headsetcontrol`, see [USB peripherals](06-usb-peripherals.md) |
+| headsetcontrol | `~/.local/bin/headsetcontrol`, updated by `headsetcontrol-update`, see [Updates](03-updates.md) and [USB peripherals](06-usb-peripherals.md) |
 
 ---
 
