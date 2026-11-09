@@ -1,0 +1,244 @@
+#!/usr/bin/python3
+# Updates the HeadsetControl source build to the latest signed GitHub release, built inside the vscode distrobox.
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.request
+
+HOME = os.path.expanduser("~")
+OPT = os.path.join(HOME, ".local/opt")
+LINK = os.path.join(OPT, "headsetcontrol")
+BIN = os.path.join(HOME, ".local/bin/headsetcontrol")
+KEYRING = os.path.join(HOME, ".local/share/headsetcontrol/signing-key.gpg")
+REPO = "Sapd/HeadsetControl"
+CONTAINER = "vscode"
+PREFIX = "headsetcontrol-"
+
+
+class Fail(Exception):
+    pass
+
+
+def parse_version(text):
+    m = re.search(r"HeadsetControl\s+(\d+(?:\.\d+)*)(?:-([0-9a-f]{7,40}))?\s*$", text or "", re.M)
+    if not m:
+        return None
+    release, commit = m.group(1), m.group(2)
+    if release == "0.0.0" and commit:
+        return (None, commit)
+    return (release, None)
+
+
+def version_key(release):
+    return tuple(int(p) for p in release.split("."))
+
+
+def is_newer(latest, current):
+    return version_key(latest) > version_key(current)
+
+
+def needs_update(current, latest, lineage=None):
+    release, commit = current
+    if release is not None:
+        return is_newer(latest, release)
+    if commit is None:
+        return True
+    return lineage not in ("identical", "behind")
+
+
+def update_line(old, new):
+    return "headsetcontrol %s → %s" % (old, new)
+
+
+def version_text(version):
+    release, commit = version
+    return release if release is not None else "0.0.0-" + commit
+
+
+def dir_name(version_or_text):
+    text = version_or_text if isinstance(version_or_text, str) else version_text(version_or_text)
+    return PREFIX + text
+
+
+def stale_dirs(names, keep):
+    keep = set(keep)
+    return sorted(n for n in names if n.startswith(PREFIX) and not n.endswith(".partial") and n not in keep)
+
+
+def tarball_url(tag, repo=REPO):
+    return "https://github.com/%s/releases/download/%s/headsetcontrol-%s.tar.gz" % (repo, tag, tag)
+
+
+def build_cmd(args, in_container, container=CONTAINER):
+    if in_container:
+        return list(args)
+    return ["distrobox", "enter", container, "--"] + list(args)
+
+
+def in_container():
+    return os.path.exists("/run/.containerenv")
+
+
+def run(args, **kw):
+    return subprocess.run(args, capture_output=True, text=True, **kw)
+
+
+def fetch_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "headsetcontrol-update", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)
+
+
+def download(url, dest, timeout):
+    req = urllib.request.Request(url, headers={"User-Agent": "headsetcontrol-update"})
+    with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
+        shutil.copyfileobj(r, f)
+
+
+def installed_version(bin_path):
+    if not os.access(bin_path, os.X_OK):
+        raise Fail("no install found at %s" % bin_path)
+    try:
+        out = run([bin_path, "--version"], timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise Fail("%s --version failed: %s" % (bin_path, exc))
+    version = parse_version(out.stdout + out.stderr)
+    if version is None:
+        raise Fail("cannot read version from %s --version: %r" % (bin_path, (out.stdout + out.stderr).strip()))
+    return version
+
+
+def latest_release(repo):
+    try:
+        tag = fetch_json("https://api.github.com/repos/%s/releases/latest" % repo).get("tag_name", "")
+    except Exception as exc:
+        raise Fail("could not reach GitHub: %s" % exc)
+    tag = tag.lstrip("v")
+    if not re.fullmatch(r"\d+(\.\d+)*", tag):
+        raise Fail("GitHub returned no usable release tag: %r" % tag)
+    return tag
+
+
+def lineage(repo, commit, tag):
+    try:
+        return fetch_json("https://api.github.com/repos/%s/compare/%s...%s" % (repo, commit, tag)).get("status")
+    except Exception:
+        return None
+
+
+def verify(keyring, sig, tarball):
+    if not os.path.isfile(keyring):
+        raise Fail("pinned signing key missing at %s" % keyring)
+    r = run(["gpgv", "--keyring", keyring, sig, tarball])
+    if r.returncode != 0:
+        raise Fail("signature check FAILED for %s — not installed" % os.path.basename(tarball))
+
+
+def build(partial, tag, container, inside):
+    src = os.path.join(partial, "src")
+    bld = os.path.join(partial, "build")
+    tarball = os.path.join(partial, "headsetcontrol-%s.tar.gz" % tag)
+    os.mkdir(src)
+    r = run(["tar", "xzf", tarball, "-C", src, "--strip-components=1"])
+    if r.returncode != 0:
+        raise Fail("unpack failed: %s" % r.stderr.strip())
+    if not os.path.isfile(os.path.join(src, "CMakeLists.txt")):
+        raise Fail("unexpected tarball layout")
+    steps = [
+        ["cmake", "-S", src, "-B", bld, "-DCMAKE_BUILD_TYPE=Release", "-DHEADSETCONTROL_VERSION=" + tag],
+        ["cmake", "--build", bld, "--target", "headsetcontrol", "-j%d" % (os.cpu_count() or 2)],
+    ]
+    for step in steps:
+        r = run(build_cmd(step, inside, container), cwd=partial, timeout=1800)
+        if r.returncode != 0:
+            raise Fail("build failed (%s):\n%s" % (" ".join(step[:2]), (r.stderr or r.stdout).strip()[-2000:]))
+    built = os.path.join(bld, "headsetcontrol")
+    if not os.access(built, os.X_OK):
+        raise Fail("build produced no binary at %s" % built)
+    os.mkdir(os.path.join(partial, "bin"))
+    shutil.copy2(built, os.path.join(partial, "bin/headsetcontrol"))
+    shutil.rmtree(src)
+    shutil.rmtree(bld)
+    os.remove(tarball)
+    os.remove(tarball + ".asc")
+
+
+def replace_symlink(target, link):
+    tmp = link + ".new"
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    os.symlink(target, tmp)
+    os.replace(tmp, link)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--opt", default=OPT)
+    ap.add_argument("--bin", default=BIN)
+    ap.add_argument("--keyring", default=KEYRING)
+    ap.add_argument("--repo", default=REPO)
+    ap.add_argument("--container", default=CONTAINER)
+    a = ap.parse_args(argv)
+    link = os.path.join(a.opt, "headsetcontrol")
+
+    current = installed_version(a.bin)
+    latest = latest_release(a.repo)
+    lin = lineage(a.repo, current[1], latest) if current[1] else None
+    if not needs_update(current, latest, lin):
+        return 0
+
+    name = dir_name(latest)
+    partial = os.path.join(a.opt, name + ".partial")
+    shutil.rmtree(partial, ignore_errors=True)
+    os.makedirs(partial)
+    try:
+        url = tarball_url(latest, a.repo)
+        tarball = os.path.join(partial, "headsetcontrol-%s.tar.gz" % latest)
+        try:
+            download(url, tarball, 600)
+        except Exception as exc:
+            raise Fail("download failed: %s (%s)" % (url, exc))
+        try:
+            download(url + ".asc", tarball + ".asc", 30)
+        except Exception as exc:
+            raise Fail("signature download failed (%s)" % exc)
+        verify(a.keyring, tarball + ".asc", tarball)
+        build(partial, latest, a.container, in_container())
+        got = installed_version(os.path.join(partial, "bin/headsetcontrol"))
+        if got != (latest, None):
+            raise Fail("new binary reports %s, expected %s" % (version_text(got), latest))
+    except Fail:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise
+
+    final = os.path.join(a.opt, name)
+    shutil.rmtree(final, ignore_errors=True)
+    os.rename(partial, final)
+    replace_symlink(name, link)
+
+    # first run: the live binary is a plain file, keep it as the rollback version
+    old_name = dir_name(current)
+    if os.path.isfile(a.bin) and not os.path.islink(a.bin):
+        old_dir = os.path.join(a.opt, old_name, "bin")
+        os.makedirs(old_dir, exist_ok=True)
+        shutil.copy2(a.bin, os.path.join(old_dir, "headsetcontrol"))
+    replace_symlink(os.path.relpath(os.path.join(link, "bin/headsetcontrol"), os.path.dirname(a.bin)), a.bin)
+
+    for d in stale_dirs(os.listdir(a.opt), (name, old_name)):
+        shutil.rmtree(os.path.join(a.opt, d), ignore_errors=True)
+
+    print(update_line(version_text(current), latest))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Fail as exc:
+        print("headsetcontrol-update: %s" % exc, file=sys.stderr)
+        sys.exit(1)
