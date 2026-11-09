@@ -27,6 +27,19 @@ def should_play(report):
     return report is not None and len(report) > ARCTIS_STATUS_BYTE and report[ARCTIS_STATUS_BYTE] == HEADSET_OFFLINE
 
 
+def state_for(report):
+    if should_play(report):
+        return "tone"
+    return "headset" if report is not None else "unreadable"
+
+
+def write_state(path, state):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(state + "\n")
+    os.replace(tmp, path)
+
+
 def find_arctis_interface4():
     for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         real = os.path.realpath(os.path.join(link, "device"))
@@ -64,6 +77,39 @@ def arctis_status_report(timeout=0.6):
         os.close(fd)
 
 
+def wait_for_event(fd, timeout):
+    if fd is None:
+        time.sleep(timeout)
+        return False
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+            return False
+        woke = False
+        while True:
+            try:
+                buf = os.read(fd, 128)
+            except BlockingIOError:
+                break
+            if not buf:
+                break
+            if not (buf[0] == 0x06 and buf[1] == 0xB0):
+                woke = True
+        if woke:
+            return True
+
+
+def open_listener():
+    node = find_arctis_interface4()
+    if not node:
+        return None
+    try:
+        return os.open(node, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return None
+
+
 def find_sink(dump_json):
     try:
         objects = json.loads(dump_json)
@@ -79,16 +125,18 @@ def find_sink(dump_json):
 
 class SineGenerator:
     def __init__(self, freq, amplitude, rate=RATE):
-        self.step = 2 * math.pi * freq / rate
-        self.peak = amplitude * 32767
-        self.n = 0
+        step = 2 * math.pi * round(freq) / rate
+        peak = amplitude * 32767
+        self.second = b"".join(struct.pack("<hh", v, v) for v in (round(peak * math.sin(step * i)) for i in range(rate)))
+        self.pos = 0
 
     def chunk(self, frames):
+        need = frames * 4
         out = bytearray()
-        for i in range(self.n, self.n + frames):
-            v = round(self.peak * math.sin(self.step * i))
-            out += struct.pack("<hh", v, v)
-        self.n += frames
+        while len(out) < need:
+            take = min(need - len(out), len(self.second) - self.pos)
+            out += self.second[self.pos:self.pos + take]
+            self.pos = (self.pos + take) % len(self.second)
         return bytes(out)
 
 
@@ -131,19 +179,27 @@ class Player:
 def main():
     freq = float(os.environ.get("SPEAKER_KEEPALIVE_FREQ", "20"))
     amplitude = float(os.environ.get("SPEAKER_KEEPALIVE_AMPLITUDE", "0.02"))
-    poll = float(os.environ.get("SPEAKER_KEEPALIVE_POLL", "5"))
+    poll = float(os.environ.get("SPEAKER_KEEPALIVE_POLL", "10"))
+    state_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "speaker-keepalive")
     player = None
+    written = None
+    listener = None
 
     def shutdown(*_):
         if player:
             player.stop()
+        try:
+            os.remove(state_path)
+        except OSError:
+            pass
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
     while True:
-        play = should_play(arctis_status_report())
+        state = state_for(arctis_status_report())
+        play = state == "tone"
         if player and not player.alive():
             log("tone player exited")
             player = None
@@ -157,7 +213,18 @@ def main():
             player.stop()
             player = None
             log("headset not offline: tone off")
-        time.sleep(poll)
+        if play and not player:
+            state = "error"
+        if state != written:
+            write_state(state_path, state)
+            written = state
+        if listener is None:
+            listener = open_listener()
+        try:
+            wait_for_event(listener, poll)
+        except OSError:
+            os.close(listener)
+            listener = None
 
 
 if __name__ == "__main__":

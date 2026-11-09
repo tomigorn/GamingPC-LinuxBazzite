@@ -38,6 +38,51 @@ class ShouldPlay(unittest.TestCase):
         self.assertFalse(sk.should_play(bytes([0x06, 0xB0, 0x00])))
 
 
+class State(unittest.TestCase):
+    def test_offline_is_tone(self):
+        self.assertEqual(sk.state_for(report(0x01)), "tone")
+
+    def test_online_is_headset(self):
+        self.assertEqual(sk.state_for(report(0x08)), "headset")
+
+    def test_charging_is_headset(self):
+        self.assertEqual(sk.state_for(report(0x02)), "headset")
+
+    def test_unreadable(self):
+        self.assertEqual(sk.state_for(None), "unreadable")
+
+    def test_write_state_replaces_file(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "state")
+        sk.write_state(path, "tone")
+        sk.write_state(path, "headset")
+        with open(path) as f:
+            self.assertEqual(f.read(), "headset\n")
+
+
+class WaitForEvent(unittest.TestCase):
+    def test_report_wakes_and_is_drained(self):
+        r, w = os.pipe()
+        os.set_blocking(r, False)
+        os.write(w, bytes([0x07, 0xB5, 0x01, 0x00, 0x04]) * 3)
+        self.assertTrue(sk.wait_for_event(r, 1))
+        self.assertFalse(sk.wait_for_event(r, 0.05))
+
+    def test_own_status_reply_does_not_wake(self):
+        r, w = os.pipe()
+        os.set_blocking(r, False)
+        os.write(w, report(0x01))
+        self.assertFalse(sk.wait_for_event(r, 0.05))
+
+    def test_timeout_without_report(self):
+        r, w = os.pipe()
+        os.set_blocking(r, False)
+        self.assertFalse(sk.wait_for_event(r, 0.05))
+
+    def test_no_device_just_sleeps(self):
+        self.assertFalse(sk.wait_for_event(None, 0.05))
+
+
 class Sine(unittest.TestCase):
     def samples(self, chunk):
         return struct.unpack("<%dh" % (len(chunk) // 2), chunk)
@@ -58,6 +103,12 @@ class Sine(unittest.TestCase):
         whole = sk.SineGenerator(freq=20, amplitude=0.5, rate=48000).chunk(1000)
         gen = sk.SineGenerator(freq=20, amplitude=0.5, rate=48000)
         self.assertEqual(gen.chunk(333) + gen.chunk(667), whole)
+
+    def test_loop_point_is_seamless(self):
+        gen = sk.SineGenerator(freq=20, amplitude=0.5, rate=48000)
+        s = self.samples(gen.chunk(47000) + gen.chunk(2000))[0::2]
+        want = [round(0.5 * 32767 * math.sin(2 * math.pi * 20 * i / 48000)) for i in range(49000)]
+        self.assertEqual(list(s), want)
 
 
 class FindSink(unittest.TestCase):
