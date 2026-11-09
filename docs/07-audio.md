@@ -49,6 +49,7 @@ DeepFilterNet (neural noise removal) is the heaviest plugin, ~3 % CPU on average
 | Setting | Value | Note |
 |---|---|---|
 | Sidetone | **Low** (2026-11-08) | Medium passed too much keyboard typing; Off → tendency to shout |
+| Power saving | **on** | required for the dock to go dark at shutdown, see [USB peripherals](06-usb-peripherals.md#steelseries-base-station-turn-off-with-the-pc) |
 
 Echo of typing/speakers while wearing the headset with speakers on: not sidetone, not the PC (no mic loopback). Likely Transparency mode (headset button: ANC → Transparency → Off).
 

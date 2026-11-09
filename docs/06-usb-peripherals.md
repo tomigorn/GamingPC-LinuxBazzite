@@ -16,7 +16,9 @@ $ sudo uhubctl            # find the hub/port the 1038:12e0 is on
 $ sudo uhubctl -l 1-3 -p 3 -a off
 ```
 
-> **Broken since about 2026-11-05, cause open.** The hub reports the port as `off` (also with all four ports off), but the dock stays powered and lit; unplugging the cable does turn it off. Ruled out: the scripts (unchanged, log shows the cut every night), the speaker keep-alive and HeadsetControl 4.2.0 (real shutdown without them: still lit), firmware (dock 1.30, hub 1.16, BIOS FA3a unchanged since September). Changed around that date: Bazzite 44 → 45 with a new kernel (5 Nov), and SteelSeries GG 122 → 123 on Windows (4 Nov). Next checks: does a Windows shutdown still switch the dock off; the 20 s cut test on a Bazzite 44 image. Fallback that needs neither: BIOS → ErP enabled (no USB power when the PC is off).
+> **Needs the dock's own power-saving option switched on** (base station menu, on the device). The hub only *reports* the port as `off`: the dock stays powered (tested 2026-11-09 on ports 3 and 4, and with all four ports off; pulling the cable does turn it off). So `uhubctl` just takes the PC away from the dock, and the dock then switches itself off, but only with power saving on. With it off, the OLED stays lit after shutdown, although the log shows a successful cut.
+>
+> Screen stays lit after shutdown? Check that option first. Not the cause (all ruled out on 2026-11-09): the scripts, the speaker keep-alive, HeadsetControl, firmware (dock 1.30, hub 1.16, BIOS FA3a), Bazzite 45. How the option got switched off is unknown (the dock menu was used for sidetone the evening before; GG on Windows had updated to 123 on 4 Nov). Fallback that needs no dock setting: BIOS → ErP enabled (no USB power when the PC is off).
 
 This replaced the first version (`steelseries-poweroff.service`, which looked the port up *during* shutdown, now in [`archive/`](../archive/)). The current version is two units plus two scripts:
 
