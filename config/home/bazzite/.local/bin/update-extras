@@ -1,0 +1,26 @@
+#!/usr/bin/bash
+# Updates what uupd does not: tarball apps and the podman images of the quadlets.
+if [ -f /run/.containerenv ]; then
+    exec distrobox-host-exec "$(readlink -f "$0")" "$@"
+fi
+
+status=0
+"$HOME/.local/bin/pdfsam-update" || status=1
+if [ -x "$HOME/.local/bin/headsetcontrol-update" ]; then
+    "$HOME/.local/bin/headsetcontrol-update" || status=1
+fi
+
+for img in $(sed -n 's/^Image=//p' "$HOME"/.config/containers/systemd/*.container 2>/dev/null | sort -u); do
+    before=$(podman image inspect --format '{{.Id}}' "$img" 2>/dev/null)
+    if ! podman pull -q "$img" >/dev/null 2>"/tmp/update-extras.$$"; then
+        echo "podman pull $img: $(tail -1 "/tmp/update-extras.$$")" >&2
+        status=1
+        continue
+    fi
+    after=$(podman image inspect --format '{{.Id}}' "$img" 2>/dev/null)
+    [ "$before" != "$after" ] && echo "${img##*/} updated"
+done
+rm -f "/tmp/update-extras.$$"
+podman image prune -f >/dev/null 2>&1
+
+exit $status

@@ -1,0 +1,12 @@
+[Unit]
+Description=Update tarball apps and container images, then run the security scan
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do getent hosts registry-1.docker.io >/dev/null && exit 0; sleep 2; done; exit 0'
+ExecStart=-%h/.local/bin/update-extras
+ExecStart=%h/.local/bin/security-scan
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle

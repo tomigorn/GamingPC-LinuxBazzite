@@ -39,8 +39,14 @@ snap_image()   { rpm-ostree status --json 2>/dev/null \
                    | jq -r '[.deployments[]|select(.booted).version] + [.deployments[]|select(.staged).version] | @tsv' \
                    > "$TMP/image.$1"; }
 # tarball installs uupd cannot see, each updated by its own ~/.local/bin/<name>-update
-snap_apps()    { readlink "$HOME/.local/opt/pdfsam" 2>/dev/null \
-                   | sed -n 's/^pdfsam-basic-\(.*\)-linux-x64$/pdfsam \1/p' > "$TMP/apps.$1"; }
+snap_apps()    { { readlink "$HOME/.local/opt/pdfsam" 2>/dev/null \
+                     | sed -n 's/^pdfsam-basic-\(.*\)-linux-x64$/pdfsam \1/p'
+                   "$HOME/.local/bin/headsetcontrol" --version 2>/dev/null | awk 'NR==1{print "headsetcontrol", $2}'
+                 } > "$TMP/apps.$1"; }
+# podman images of the quadlets, by build date
+snap_images()  { local i; for i in $(sed -n 's/^Image=//p' "$HOME"/.config/containers/systemd/*.container 2>/dev/null | sort -u); do
+                   echo "${i##*/} $(podman image inspect --format '{{.Created.Format "2006-01-02"}}' "$i" 2>/dev/null || echo missing)"
+                 done > "$TMP/images.$1"; }
 snap_boxes()   { local c; for c in $containers; do
                    distrobox enter -n "$c" -- rpm -qa --qf '%{NAME} %{EVR}\n' 2>/dev/null | sort > "$TMP/box.$c.$1"
                  done; }
@@ -113,7 +119,7 @@ category_of() {
 
 printf '\n%s%s%s\n' "$B" "Bazzite update" "$R"
 
-snap_brew before; snap_flatpak before; snap_image before; snap_boxes before; snap_apps before
+snap_brew before; snap_flatpak before; snap_image before; snap_boxes before; snap_apps before; snap_images before
 start=$(date +%s)
 step_start=$start
 : > "$TMP/failures"
@@ -181,9 +187,10 @@ for c in brew flatpak box; do
         brew) snap_brew after ;; flatpak) snap_flatpak after ;; box) snap_boxes after ;;
     esac
 done
-[ "$GUI" = 0 ] && step "Apps — tarball installs"
-"$HOME/.local/bin/pdfsam-update" 2>>"$TMP/failures" >/dev/null
+[ "$GUI" = 0 ] && step "Apps and container images"
+"$HOME/.local/bin/update-extras" 2>>"$TMP/failures" >/dev/null
 snap_apps after
+snap_images after
 [ "$GUI" = 0 ] && live_result Apps "$TMP/apps.before" "$TMP/apps.after"
 snap_image after
 elapsed=$(( $(date +%s) - start ))
@@ -220,6 +227,7 @@ fi
 section "Flatpaks" "$TMP/flatpak.before" "$TMP/flatpak.after"
 section "Brew"     "$TMP/brew.before"    "$TMP/brew.after"
 section "Apps"     "$TMP/apps.before"    "$TMP/apps.after"
+section "Containers" "$TMP/images.before" "$TMP/images.after"
 
 printf '  %s%s%s\n' "$B" "Distrobox" "$R"
 for c in $containers; do
@@ -233,6 +241,12 @@ if [ "${fw:-0}" -gt 0 ]; then
 else
     printf '  %s%-10s%s %sno updates%s\n' "$B" "Firmware" "$R" "$D" "$R"
 fi
+
+[ "$GUI" = 0 ] && [ -t 1 ] && printf '    %ssecurity scan… (about a minute)%s\r' "$D" "$R"
+scan=$(nice -n 19 ionice -c 3 "$HOME/.local/bin/security-scan" 2>&1)
+[ -t 1 ] && printf '\r%*s\r' 46 ''
+printf '  %s%s%s\n' "$B" "Security" "$R"
+sed "s|^|$IND|" <<<"$scan"
 
 echo
 if [ "$rc" -eq 0 ] && [ ! -s "$TMP/failures" ]; then
