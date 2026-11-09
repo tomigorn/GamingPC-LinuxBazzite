@@ -1,0 +1,18 @@
+# Disable the Microsoft Graph WebSocket change-notification subscription.
+#
+# 2026-08-15: the subscription began failing on every attempt with
+# "400 Bad Request / notSupported" (it last succeeded at 15:57 local). The
+# client retried it on every start, throwing two desktop notifications each
+# boot -- the 400 itself, then "Unable to configure WebSocket support".
+#
+# Nothing local caused this: a restart with clean DNS failed identically, and
+# the config, client version (v2.5.11) and network were unchanged across the
+# boundary. Microsoft is simply refusing the subscription for this account.
+#
+# Turning it off costs nothing while that is true -- push already does not
+# work. Sync falls back to the monitor_interval poll (300s default) plus
+# inotify for local changes. If Microsoft re-enables subscriptions, set this
+# back to "false" to get near real-time cloud-side updates again.
+
+disable_websocket_support = "true"
+monitor_fullscan_frequency = "288"
