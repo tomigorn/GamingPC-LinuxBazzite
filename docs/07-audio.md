@@ -32,7 +32,7 @@ Per-game sink: e.g. a Lutris game gets `PULSE_SINK: movie_eq` in its `system.env
 | Unit | Does |
 |---|---|
 | `discord-surround-downmix.service` | runs a standalone PipeWire filter ([`standalone/discord-surround-downmix.conf`](../config/home/bazzite/.config/pipewire/standalone/discord-surround-downmix.conf)): ITU downmix of FC/SL/SR/RL/RR at 0.707, LFE dropped |
-| `discord-surround-linker.service` | runs [`discord-surround-linker`](../config/home/bazzite/.local/bin/discord-surround-linker), which watches `pw-dump` every second and connects captured apps' surround channels through the downmix into `vencord-screen-share` |
+| `discord-surround-linker.service` | runs [`discord-surround-linker`](../config/home/bazzite/.local/bin/discord-surround-linker), which follows the graph through one long-lived `pw-dump --monitor` (~0 % CPU, reacts instantly) and connects captured apps' surround channels through the downmix into `vencord-screen-share` |
 
 Both are started together with `pipewire.service` (`pipewire.service.wants/`). Moving a running stream to another sink drops venmic's connections. Restart the stream in Discord.
 
