@@ -19,8 +19,8 @@ ls -la ~/.config/autostart/onedrive-tray.desktop
 echo "total size: $(du -sh ~/.local/share/onedrive-tray/ | cut -f1)"
 echo
 echo "=== sync service untouched ==="
-systemctl --user is-active homebrew.onedrive-cli.service
-systemctl --user is-enabled homebrew.onedrive-cli.service
+systemctl --user is-active sh.brew.onedrive-cli.service
+systemctl --user is-enabled sh.brew.onedrive-cli.service
 pgrep -af "onedrive --monitor" | wc -l
 echo
 echo "=== no stray files left in ~/OneDrive ==="

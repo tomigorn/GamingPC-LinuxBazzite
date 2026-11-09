@@ -2,7 +2,7 @@
 """
 onedrive-tray — a minimal KDE Plasma StatusNotifierItem for the abraunegg
 OneDrive client (v2.5.11) running as the systemd user service
-`homebrew.onedrive-cli`.
+`sh.brew.onedrive-cli`.
 
 DESIGN: PASSIVE OBSERVER ONLY.
 This program NEVER starts a sync of its own. The systemd service is the single
@@ -27,13 +27,13 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 gi.require_version("Notify", "0.7")
-from gi.repository import AppIndicator3, GLib, Gtk, Notify  # noqa: E402
+from gi.repository import AppIndicator3, Gio, GLib, Gtk, Notify  # noqa: E402
 
 # --- Configuration ----------------------------------------------------------
 
 LOG_PATH = "/home/linuxbrew/.linuxbrew/var/log/onedrive.log"
 SYNC_DIR = os.path.expanduser("~/OneDrive")
-UNIT = "homebrew.onedrive-cli.service"
+UNIT = "sh.brew.onedrive-cli.service"
 
 LOG_POLL_MS = 1000       # how often to read new log bytes
 UNIT_POLL_S = 5          # how often to ask systemd if the service is alive
@@ -118,6 +118,7 @@ class OneDriveTray:
         self.err_await = None        # preamble of an ERROR block awaiting detail
 
         # --- log file position tracking ---
+        self.bus = None
         self.fh = None
         self.inode = None
         self.buf = ""
@@ -205,8 +206,25 @@ class OneDriveTray:
         self._notify("OneDrive", "Sync service restarted")
         GLib.timeout_add_seconds(2, self._poll_unit)
 
+    def _unit_active(self):
+        try:
+            bus = self.bus or Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            self.bus = bus
+            path = bus.call_sync(
+                "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                "org.freedesktop.systemd1.Manager", "LoadUnit",
+                GLib.Variant("(s)", (UNIT,)), GLib.VariantType("(o)"), 0, 2000, None)[0]
+            state = bus.call_sync(
+                "org.freedesktop.systemd1", path, "org.freedesktop.DBus.Properties", "Get",
+                GLib.Variant("(ss)", ("org.freedesktop.systemd1.Unit", "ActiveState")),
+                GLib.VariantType("(v)"), 0, 2000, None)[0]
+            return state == "active"
+        except GLib.Error:
+            self.bus = None
+            return self._systemctl("is-active", UNIT) == "active"
+
     def _poll_unit(self):
-        active = self._systemctl("is-active", UNIT) == "active"
+        active = self._unit_active()
         if not active:
             # Service down: that is a paused/stopped condition, not an error.
             # Clear any in-flight transfer so the UI cannot show a stale file.

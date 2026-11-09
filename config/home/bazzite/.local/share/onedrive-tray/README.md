@@ -1,7 +1,7 @@
 # onedrive-tray
 
 A minimal KDE Plasma tray indicator (StatusNotifierItem) for the abraunegg
-OneDrive client running as the systemd user service `homebrew.onedrive-cli`.
+OneDrive client running as the systemd user service `sh.brew.onedrive-cli`.
 
 ## Single sync owner
 
@@ -36,7 +36,7 @@ pkill -f onedrive-tray.py                                 # stop
 `/home/linuxbrew/.linuxbrew/var/log/onedrive.log` — the service unit sets
 `StandardOutput=append:` to it, so it already contains everything the client
 prints, including per-file transfer percentages. No client config change was
-needed. Note that `journalctl --user -u homebrew.onedrive-cli` shows only
+needed. Note that `journalctl --user -u sh.brew.onedrive-cli` shows only
 systemd lifecycle lines, *not* sync detail, because of that redirect.
 
 ## Pause/Resume uses systemctl, not `brew services`

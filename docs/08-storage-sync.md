@@ -44,7 +44,7 @@ password=...
 
 ## OneDrive
 
-The abraunegg `onedrive` client (v2.5.x) from **Homebrew**, running as the user service `homebrew.onedrive-cli`. It syncs to `~/OneDrive`.
+The abraunegg `onedrive` client (v2.5.x) from **Homebrew**, running as the user service `sh.brew.onedrive-cli`. It syncs to `~/OneDrive`.
 
 ```bash
 brew install onedrive-cli
@@ -58,7 +58,7 @@ Manage it from inside the distrobox with `distrobox-host-exec brew services list
 
 Customisations:
 
-- **Wait for DNS before starting**, [`override.conf`](../config/home/bazzite/.config/systemd/user/homebrew.onedrive-cli.service.d/override.conf): polls `getent hosts graph.microsoft.com` for up to 120 s, and always continues. It lives in a drop-in because `brew services` regenerates the main unit on upgrade.
+- **Wait for DNS before starting**, [`override.conf`](../config/home/bazzite/.config/systemd/user/sh.brew.onedrive-cli.service.d/override.conf): polls `getent hosts graph.microsoft.com` for up to 120 s, and always continues. It lives in a drop-in because `brew services` regenerates the main unit on upgrade. Homebrew renamed the unit from `homebrew.onedrive-cli` to `sh.brew.onedrive-cli` on a `brew services restart` (2026-11-09): the drop-in folder has to carry the current unit name, check with `systemctl --user show sh.brew.onedrive-cli -p DropInPaths`.
 - **WebSocket push disabled**: `~/.config/onedrive/config` contains `disable_websocket_support = "true"`. Microsoft's change-notification subscription kept failing with `400 Bad Request / notSupported` (popups, roughly daily). File sync was never affected. Now it polls every 300 s plus inotify for local changes. If Microsoft fixes it, flip it back for instant sync.
 - **Full re-scan once a day**, not hourly: `monitor_fullscan_frequency = "288"` (288 × 300 s). The default (every 12th loop) re-fetched all ~358k online items every hour, ~9 % of a core on average. Remote changes still arrive with the 5-min delta poll; the full scan is only the consistency safety net. Config copy: [`config/.../onedrive/config`](../config/home/bazzite/.config/onedrive/config).
 - **Tray icon**: a small self-written indicator, [`onedrive-tray`](../config/home/bazzite/.local/share/onedrive-tray/) (README inside). It only reads the service's log and never touches the sync itself. Autostarts via `~/.config/autostart/onedrive-tray.desktop`.
